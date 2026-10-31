@@ -303,8 +303,8 @@ class CityAudioSystem {
     const now = this.context.currentTime;
     const crash = kind === 'crash';
     const severity = clamp(options.severity ?? options.intensity ?? 1, 0, 1);
-    const ref = crash ? 4 + severity * 8 : kind === 'horn' ? 8 : kind === 'talk' ? 2 : 1.8;
-    const range = crash ? 50 + severity * 110 : kind === 'horn' ? 140 : kind === 'talk' ? 30 : kind === 'footstep' ? 22 : 35;
+    const ref = crash ? 4 + severity * 8 : kind === 'horn' ? 8 : kind === 'scream' ? 3 : kind === 'talk' ? 2 : 1.8;
+    const range = crash ? 50 + severity * 110 : kind === 'horn' ? 140 : kind === 'scream' ? 40 : kind === 'talk' ? 30 : kind === 'footstep' ? 22 : 35;
     if (Math.hypot(source.x - this.listener.x, source.y - this.listener.y, source.z - this.listener.z) > range) return false;
     if (crash || options.priority) {
       // Impacts are immediate, between the 10 Hz ambience updates. Reclaim finished events first, then let
@@ -333,11 +333,11 @@ class CityAudioSystem {
     }
     if (this.events.length >= this.limits.events) return false;
     const emitter = new SpatialEmitter(this.context, this.mix, this.reflections, this.acoustics,
-      ref, kind === 'talk' ? 1.5 : 0, kind === 'horn');
+      ref, (kind === 'talk' || kind === 'scream') ? 1.5 : 0, kind === 'horn');
     // Do not fade away the first few milliseconds of a crash: its spatial gain and filtering are ready at onset.
     emitter.update(source, this.listener, now, range, true, crash);
     const voice = playEvent(this.context, this.resources, kind, emitter.input, { seed: source.seed, ...options });
-    this.events.push({ kind, voice, emitter, id: source.id, range, severity, position: { ...source }, follow: kind === 'talk' || kind === 'horn' });
+    this.events.push({ kind, voice, emitter, id: source.id, range, severity, position: { ...source }, follow: kind === 'talk' || kind === 'horn' || kind === 'scream' });
     return true;
   }
 
@@ -434,7 +434,11 @@ class CityAudioSystem {
         }
         const source = event.follow && (sources.motors.find(s => s.id === event.id) || sources.people.find(s => s.id === event.id));
         if (source) Object.assign(event.position, source);
-        else if (event.kind === 'horn' && event.id.edge) {
+        else if (event.kind === 'scream' && event.id && event.id.placed) {
+          event.position.x = event.id.x;
+          event.position.y = 0.2;
+          event.position.z = event.id.z;
+        } else if (event.kind === 'horn' && event.id.edge) {
           // Collision horns can belong to traffic outside the nearest motor voices.
           event.position.x = event.id.x;
           event.position.z = event.id.z;

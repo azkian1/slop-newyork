@@ -1439,7 +1439,7 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections) {
     a.prevX = prevX; a.prevZ = prevZ;
     a.sin = Math.sin(heading); a.cos = Math.cos(heading);
     a.halfW = player.halfW; a.halfL = player.halfL;
-    a.mass = pe.type === 'car' ? 1700 : pe.type === 'cyclist' ? 95 : 80;
+    a.mass = (pe.isGiantRoach || pe.type === 'car') ? 1700 : pe.type === 'cyclist' ? 95 : 80;
     a.vx = a.sin * (pe.speed || 0) + (pe.vx || 0);
     a.vz = a.cos * (pe.speed || 0) + (pe.vz || 0);
     a.angularVel = pe.type === 'car' ? pe.angularVel || 0 : 0;
@@ -1469,7 +1469,7 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections) {
       pe.heaveVel += Math.min(0.7, kick * 0.06);
     }
     impactSuspension(v, -hit.nx, -hit.nz, hit.impulse / b.mass);
-    if (pe.type !== 'person') reportCollision(pe, v, hit.x, 0.58, hit.z, hit.nx, hit.nz, speed);
+    if (pe.type !== 'person' || pe.isGiantRoach) reportCollision(pe, v, hit.x, 0.58, hit.z, hit.nx, hit.nz, speed);
     if (speed > 2.2) spawnCollisionSparks(hit.x, 0.58, hit.z, hit.nx, hit.nz, speed);
   }
 
@@ -1891,7 +1891,9 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections) {
     refreshNear();
     updateView(camera);
 
-    player.active = Boolean(playerEntity && !playerEntity.isRoach && activeMode !== 'helicopter' && playerEntity.position.y < 2.6);
+    // A normal roach is not a vehicle. A giant one is: same player box pedestrians and traffic already avoid.
+    const giantRoach = Boolean(playerEntity && playerEntity.isRoach && playerEntity.roachScale > 1);
+    player.active = Boolean(playerEntity && activeMode !== 'helicopter' && playerEntity.position.y < 2.6 && (!playerEntity.isRoach || giantRoach));
     if (playerEntity) {
       const heading = playerEntity.heading || 0;
       const speed = playerEntity.speed || 0;
@@ -1903,8 +1905,13 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections) {
       player.vx = player.fx * speed + (playerEntity.vx || 0);
       player.vz = player.fz * speed + (playerEntity.vz || 0);
     }
-    player.halfW = activeMode === 'cyclist' ? 0.35 : activeMode === 'person' ? 0.32 : 0.86;
-    player.halfL = activeMode === 'cyclist' ? 0.85 : activeMode === 'person' ? 0.32 : 2.18;
+    if (giantRoach) {
+      player.halfW = playerEntity.giantHalfW;
+      player.halfL = playerEntity.giantHalfL;
+    } else {
+      player.halfW = activeMode === 'cyclist' ? 0.35 : activeMode === 'person' ? 0.32 : 0.86;
+      player.halfL = activeMode === 'cyclist' ? 0.85 : activeMode === 'person' ? 0.32 : 2.18;
+    }
 
     // 1. Cars & buses
     // Limit attempted placements, not just successes, and rotate through the pool so an awkward location

@@ -5,7 +5,8 @@ A silly mod of [Slop New York](https://github.com/mrdoob/slop-newyork) by [Mr.do
 - W/S crawl (and climb), A/D turn, Space jump / let go
 - Walk into anything (buildings, poles, people, cars) and keep pushing to climb it
 - You only die from below: a pedestrian's footstep or a car wheel while you are on the street
-- Crumbs on the street give 60 s of car speed
+- Gold crumbs on the street give 60 s of car speed
+- Red crumbs turn you into a car-sized giant for 30 s (smooth grow and shrink). Car speed, same climbing, camera pulls back. You cannot be squished while giant. People treat you as a vehicle: they dodge, dive, and run away screaming. Touching someone knocks them down; hitting a car or bus shoves it the way the player's car would
 
 Run: `python3 -m http.server` in this folder, open http://localhost:8000 (WebGPU browser recommended; `?lite` turns off shadows and post FX for slow machines).
 The mod lives in `js/cockroach.js` plus small hooks in `js/main.js`, `js/controllers.js` and `js/traffic.js`.

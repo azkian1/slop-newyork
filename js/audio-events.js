@@ -256,6 +256,28 @@ function crashDebris(ctx, seed) {
   }, 0.55);
 }
 
+// Short voiced shriek. No sample: a rising formant, a second harmonic, and a little breath noise.
+function scream(ctx, seed) {
+  const random = randomSource(seed);
+  const base = 420 + random() * 280;
+  const wobble = 6 + random() * 5;
+  const duration = 0.34 + random() * 0.16;
+  const noise = randomSource(seed + 17);
+  return makeBuffer(ctx, duration, (t) => {
+    const n = t / duration;
+    const glide = Math.sin(Math.PI * Math.min(1, n * 1.15));
+    const freq = base * (0.82 + 0.75 * glide);
+    const attack = 1 - Math.exp(-t * 220);
+    const env = attack * Math.pow(1 - n, 0.65);
+    const wob = 1 + 0.04 * Math.sin(TAU * wobble * t);
+    const voice = Math.sin(TAU * freq * wob * t)
+      + 0.45 * Math.sin(TAU * freq * 2.03 * t)
+      + 0.18 * Math.sin(TAU * freq * 3.07 * t);
+    const air = (noise() * 2 - 1) * (0.18 + 0.25 * (1 - glide));
+    return (voice * 0.72 + air) * env;
+  }, 0.5);
+}
+
 function gustBuffer(ctx) {
   // Low-rate, looping control signal: uneven overlapping gusts with a smooth seam, rather than a sine LFO.
   const sampleRate = 8000, duration = 24;
@@ -303,6 +325,7 @@ export function createEventResources(ctx, resources) {
       metal: Array.from({ length: 3 }, (_, i) => crashMetal(ctx, i + 401)),
       debris: Array.from({ length: 3 }, (_, i) => crashDebris(ctx, i + 501))
     },
+    screams: Array.from({ length: 4 }, (_, i) => scream(ctx, 70 + i)),
     gusts: gustBuffer(ctx),
     signalTick: signal(ctx, false),
     signalWalk: signal(ctx, true)
@@ -313,7 +336,7 @@ export function playEvent(ctx, resources, kind, output, options = {}) {
   const random = randomSource(options.seed);
   const start = Math.max(ctx.currentTime, finite(options.when, ctx.currentTime));
   const intensity = clamp(finite(options.intensity, 1));
-  const levels = { footstep: 0.22, talk: 0.065, horn: 0.23, signal: 0.13, crash: 0.35 };
+  const levels = { footstep: 0.22, talk: 0.065, horn: 0.23, signal: 0.13, crash: 0.35, scream: 0.16 };
   if (!Object.hasOwn(levels, kind) || intensity === 0) return { endTime: start, dispose() {} };
   const gain = ctx.createGain();
   gain.gain.value = intensity * levels[kind];
@@ -381,6 +404,8 @@ export function playEvent(ctx, resources, kind, output, options = {}) {
     }
   } else if (kind === 'horn') {
     play(resources.horns[Math.floor(random() * resources.horns.length)], start, 0.94 + random() * 0.12);
+  } else if (kind === 'scream') {
+    play(resources.screams[Math.floor(random() * resources.screams.length)], start, 0.92 + random() * 0.16, 0.85 + random() * 0.15);
   } else if (kind === 'crash') {
     const severity = clamp(finite(options.severity, intensity));
     const variant = Math.floor(random() * resources.crashes.body.length);

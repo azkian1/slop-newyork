@@ -46,9 +46,40 @@ function carRoof(car) {
 const WALK_SPEED = 1.5;      // m/s, a real cockroach sprint
 const BOOST_SPEED = 14;      // m/s, "car speed" after a crumb
 const BOOST_TIME = 60;
+const GIANT_TIME = 30;       // s, red crumb
+const GIANT_SCALE = 100;     // 4.5 cm body -> about 4.5 m, car length
+const GROW_TIME = 0.5;       // s to grow or shrink
+const GIANT_HALF_W = 1.15;   // a bit wider than a sedan (0.86)
+const GIANT_HALF_L = 2.6;    // a bit longer than a sedan (2.18)
+const PERSON_HALF = 0.32;    // traffic.js person footprint, used while the body is still small
 const TURN_RATE = 3.2;
 const RADIUS = 0.03;
 const CRUMB_COUNT = 28;
+const RED_CRUMB_COUNT = 6;
+
+// Red-crumb timer and body scale. Exported so tests can step them without WebGPU.
+function stepGiant(state, dt) {
+  if (state.giant > 0) state.giant = Math.max(0, state.giant - dt);
+  const target = state.giant > 0 ? GIANT_SCALE : 1;
+  const rate = (GIANT_SCALE - 1) / GROW_TIME;
+  if (state.scale < target) state.scale = Math.min(target, state.scale + rate * dt);
+  else if (state.scale > target) state.scale = Math.max(target, state.scale - rate * dt);
+  return state;
+}
+
+// Oriented box fed to traffic's player object. Scale 1 stays the person footprint.
+function giantFootprint(scale) {
+  const k = scale <= 1 ? 0 : Math.min(1, (scale - 1) / (GIANT_SCALE - 1));
+  return {
+    active: scale > 1,
+    halfW: PERSON_HALF + (GIANT_HALF_W - PERSON_HALF) * k,
+    halfL: PERSON_HALF + (GIANT_HALF_L - PERSON_HALF) * k
+  };
+}
+
+function roachVulnerable(scale, giant) {
+  return !(scale > 1 || giant > 0);
+}
 
 function buildRoachModel() {
   // Procedural American cockroach (~4.5 cm): glossy tegmina, pale-rimmed pronotum,
@@ -189,6 +220,10 @@ function createCockroach({ scene, controllerManager: cm, trafficSystem, cameraSy
   p.chaseDistance = 0.3;
   p.chaseHeight = 0.12;
   p.cameraTargetOffset.set(0, 0.03, 0);
+  p.roachScale = 1;
+  p.isGiantRoach = false;
+  p.giantHalfW = PERSON_HALF;
+  p.giantHalfL = PERSON_HALF;
 
   const model = buildRoachModel();
   const group = new THREE.Group();
@@ -216,13 +251,23 @@ function createCockroach({ scene, controllerManager: cm, trafficSystem, cameraSy
     m.castShadow = true;
     m.visible = false;
     group.add(m);
-    crumbs.push({ mesh: m, active: false });
+    crumbs.push({ mesh: m, active: false, red: false });
+  }
+  const redGeo = new THREE.DodecahedronGeometry(0.014, 0);
+  const redMat = new THREE.MeshStandardMaterial({ color: 0xd01212, emissive: 0x6a0404, roughness: 0.45 });
+  const redCrumbs = [];
+  for (let i = 0; i < RED_CRUMB_COUNT; i++) {
+    const m = new THREE.Mesh(redGeo, redMat);
+    m.castShadow = true;
+    m.visible = false;
+    group.add(m);
+    redCrumbs.push({ mesh: m, active: false, red: true });
   }
 
-  const body = collisionBody('person', RADIUS, 0);
   const contact = { nx: 0, nz: 0, depth: 0 };
+  const roachBody = () => collisionBody('person', RADIUS * st.scale, 0);
   const st = {
-    mode: 'ground', vy: 0, boost: 0, deaths: 0, eaten: 0, deadTimer: 0, legPhase: 0,
+    mode: 'ground', vy: 0, boost: 0, giant: 0, scale: 1, deaths: 0, eaten: 0, redEaten: 0, deadTimer: 0, legPhase: 0,
     wall: null, ped: null, car: null, spawn: p.position.clone(), lastSafe: p.position.clone(), lastEvent: ''
   };
   p.position.y = cm.getGroundHeight(p.position.x, p.position.z, 'person');
@@ -231,7 +276,7 @@ function createCockroach({ scene, controllerManager: cm, trafficSystem, cameraSy
   function blockingCollider(x, y, z) {
     let best = null;
     for (const c of near(x, z, 4)) {
-      if (buildingContact(c, x, y, z, body, contact)) {
+      if (buildingContact(c, x, y, z, roachBody(), contact)) {
         if (!best || c.maxY > best.c.maxY) best = { c, nx: contact.nx, nz: contact.nz };
       }
     }
@@ -251,7 +296,7 @@ function createCockroach({ scene, controllerManager: cm, trafficSystem, cameraSy
   function key(name) { const v = cm.keys[name]; return v === true ? 1 : Number(v) || 0; }
 
   function die(reason) {
-    if (st.mode === 'dead') return;
+    if (st.mode === 'dead' || !roachVulnerable(st.scale, st.giant)) return;
     st.mode = 'dead';
     st.deaths++;
     st.deadTimer = 2;
@@ -286,6 +331,7 @@ function createCockroach({ scene, controllerManager: cm, trafficSystem, cameraSy
   }
 
   function checkSquish() {
+    const vulnerable = roachVulnerable(st.scale, st.giant);
     const x = p.position.x, z = p.position.z;
     for (const ped of trafficSystem.peds) {
       const dx = ped.x - x, dz = ped.z - z;
@@ -294,7 +340,7 @@ function createCockroach({ scene, controllerManager: cm, trafficSystem, cameraSy
         const was = f._roachSwing;
         f._roachSwing = f.swing;
         // the heel strike: a foot that was swinging comes down
-        if (was && !f.swing) {
+        if (vulnerable && was && !f.swing) {
           const fx = f.px - x, fz = f.pz - z;
           if (fx * fx + fz * fz < 0.16 * 0.16) return die('a foot');
         }
@@ -309,7 +355,7 @@ function createCockroach({ scene, controllerManager: cm, trafficSystem, cameraSy
         for (const s of [1, -1]) {
           const wx = car.x + fx * a + fz * s * car.halfWidth * 0.85;
           const wz = car.z + fz * a - fx * s * car.halfWidth * 0.85;
-          if ((wx - x) ** 2 + (wz - z) ** 2 < 0.2 * 0.2) return die('a wheel');
+          if (vulnerable && (wx - x) ** 2 + (wz - z) ** 2 < 0.2 * 0.2) return die('a wheel');
         }
       }
     }
@@ -319,7 +365,8 @@ function createCockroach({ scene, controllerManager: cm, trafficSystem, cameraSy
     if (fwd <= 0) return false;
     const x = p.position.x, z = p.position.z;
     const hx = Math.sin(p.heading), hz = Math.cos(p.heading);
-    for (const ped of trafficSystem.peds) {
+    // A giant knocks people over instead of climbing them. Normal size still latches on.
+    if (roachVulnerable(st.scale, st.giant)) for (const ped of trafficSystem.peds) {
       if (!ped.rig.placed) continue;
       const dx = ped.x - x, dz = ped.z - z;
       if (dx * dx + dz * dz < 0.22 * 0.22 && dx * hx + dz * hz > -0.05) { attachPed(ped); return true; }
@@ -338,7 +385,7 @@ function createCockroach({ scene, controllerManager: cm, trafficSystem, cameraSy
 
   function updateGround(dt, fwd, turn) {
     p.heading += TURN_RATE * dt * turn;
-    const speed = (st.boost > 0 ? BOOST_SPEED : WALK_SPEED) * fwd;
+    const speed = ((st.boost > 0 || !roachVulnerable(st.scale, st.giant)) ? BOOST_SPEED : WALK_SPEED) * fwd;
     p.speed = speed;
     const hx = Math.sin(p.heading), hz = Math.cos(p.heading);
     const dist = Math.abs(speed * dt);
@@ -348,10 +395,10 @@ function createCockroach({ scene, controllerManager: cm, trafficSystem, cameraSy
       const bx = p.position.x + hx * step, bz = p.position.z + hz * step;
       p.position.x = bx;
       p.position.z = bz;
-      cm.resolveHorizontalCollision(p.position, RADIUS, null, null);
+      cm.resolveHorizontalCollision(p.position, RADIUS * st.scale, null, null);
       const pushed = Math.hypot(p.position.x - bx, p.position.z - bz);
       if (fwd > 0 && pushed > Math.abs(step) * 0.3) {
-        const hit = blockingCollider(bx + hx * 0.02, p.position.y, bz + hz * 0.02);
+        const hit = blockingCollider(bx + hx * 0.02 * st.scale, p.position.y, bz + hz * 0.02 * st.scale);
         if (hit) {
           const len = Math.hypot(p.position.x - bx, p.position.z - bz) || 1;
           st.mode = 'wall';
@@ -382,7 +429,7 @@ function createCockroach({ scene, controllerManager: cm, trafficSystem, cameraSy
 
   function updateWall(dt, fwd, turn) {
     const w = st.wall;
-    const speed = (st.boost > 0 ? BOOST_SPEED * 0.5 : WALK_SPEED);
+    const speed = ((st.boost > 0 || !roachVulnerable(st.scale, st.giant)) ? BOOST_SPEED * 0.5 : WALK_SPEED);
     p.heading = Math.atan2(-w.nx, -w.nz);
     p.speed = speed * fwd;
     p.position.y += speed * fwd * dt;
@@ -393,14 +440,14 @@ function createCockroach({ scene, controllerManager: cm, trafficSystem, cameraSy
       p.position.z += tz * -turn * speed * 0.6 * dt;
     }
     // stay pressed to the wall
-    p.position.x -= w.nx * 0.01;
-    p.position.z -= w.nz * 0.01;
-    cm.resolveHorizontalCollision(p.position, RADIUS, null, null);
+    p.position.x -= w.nx * 0.01 * st.scale;
+    p.position.z -= w.nz * 0.01 * st.scale;
+    cm.resolveHorizontalCollision(p.position, RADIUS * st.scale, null, null);
     const top = w.c.maxY;
     if (p.position.y >= top - 0.01) {
       // over the edge: drop onto the roof (a raycast down from above, by footprint)
-      p.position.x -= w.nx * 0.08;
-      p.position.z -= w.nz * 0.08;
+      p.position.x -= w.nx * 0.08 * st.scale;
+      p.position.z -= w.nz * 0.08 * st.scale;
       p.position.y = top + 0.3;
       p.position.y = surfaceAt(p.position.x, p.position.z, p.position.y);
       st.mode = 'ground';
@@ -408,11 +455,11 @@ function createCockroach({ scene, controllerManager: cm, trafficSystem, cameraSy
       st.lastEvent = `on a roof, ${Math.round(top)} m up`;
       return;
     }
-    const still = blockingCollider(p.position.x - w.nx * 0.04, p.position.y, p.position.z - w.nz * 0.04);
+    const still = blockingCollider(p.position.x - w.nx * 0.04 * st.scale, p.position.y, p.position.z - w.nz * 0.04 * st.scale);
     const floor = surfaceAt(p.position.x, p.position.z, p.position.y);
     if (key('up') || !still || p.position.y <= floor) {
-      p.position.x += w.nx * 0.05;
-      p.position.z += w.nz * 0.05;
+      p.position.x += w.nx * 0.05 * st.scale;
+      p.position.z += w.nz * 0.05 * st.scale;
       st.mode = 'ground';
       st.wall = null;
       st.vy = 0;
@@ -425,7 +472,8 @@ function createCockroach({ scene, controllerManager: cm, trafficSystem, cameraSy
     r.lx = ped.x; r.lz = ped.z;
     const s = ped.rig.s || 1;
     const topH = 1.74 * s;
-    r.h = Math.max(0, Math.min(topH, r.h + fwd * WALK_SPEED * 0.8 * dt));
+    const climb = roachVulnerable(st.scale, st.giant) ? WALK_SPEED : BOOST_SPEED;
+    r.h = Math.max(0, Math.min(topH, r.h + fwd * climb * 0.8 * dt));
     r.ang += turn * 2 * dt;
     const t = r.h / s;
     const rad = r.h >= topH - 0.01 ? 0 : (t < 0.12 ? 0.13 : t < 0.9 ? 0.1 : t < 1.45 ? 0.17 : t < 1.55 ? 0.07 : 0.1) * s;
@@ -436,7 +484,7 @@ function createCockroach({ scene, controllerManager: cm, trafficSystem, cameraSy
     if (r.h >= topH - 0.01) st.lastEvent = 'riding a human';
     if (key('up') || (r.h <= 0 && fwd < 0)) {
       st.mode = 'ground'; st.ped = null; st.vy = 0;
-      p.position.x += Math.sin(r.ang) * 0.15; p.position.z += Math.cos(r.ang) * 0.15;
+      p.position.x += Math.sin(r.ang) * 0.15 * st.scale; p.position.z += Math.cos(r.ang) * 0.15 * st.scale;
     }
   }
 
@@ -445,8 +493,9 @@ function createCockroach({ scene, controllerManager: cm, trafficSystem, cameraSy
     if (!car.edge) { st.mode = 'ground'; st.car = null; return; }
     const roof = carRoof(car);
     const fx = Math.sin(car.yaw), fz = Math.cos(car.yaw);
+    const climb = roachVulnerable(st.scale, st.giant) ? WALK_SPEED : BOOST_SPEED;
     if (r.h < roof) {
-      r.h = Math.max(0, Math.min(roof, r.h + fwd * WALK_SPEED * 0.8 * dt));
+      r.h = Math.max(0, Math.min(roof, r.h + fwd * climb * 0.8 * dt));
       if (r.h >= roof) {
         // step onto the roof edge, facing inward
         const L = Math.hypot(r.lx, r.lz) || 1;
@@ -459,8 +508,8 @@ function createCockroach({ scene, controllerManager: cm, trafficSystem, cameraSy
     } else {
       // crawl around the roof in car-local space; the car carries us
       r.rh += turn * TURN_RATE * dt;
-      r.lx += Math.sin(r.rh) * fwd * WALK_SPEED * 0.5 * dt;
-      r.lz += Math.cos(r.rh) * fwd * WALK_SPEED * 0.5 * dt;
+      r.lx += Math.sin(r.rh) * fwd * climb * 0.5 * dt;
+      r.lz += Math.cos(r.rh) * fwd * climb * 0.5 * dt;
       r.lx = Math.max(-car.halfWidth * 0.75, Math.min(car.halfWidth * 0.75, r.lx));
       r.lz = Math.max(-car.half * 0.45, Math.min(car.half * 0.45, r.lz));
       p.heading = car.yaw + r.rh;
@@ -471,7 +520,7 @@ function createCockroach({ scene, controllerManager: cm, trafficSystem, cameraSy
     p.speed = car.speed;
     if (key('up') || (r.h <= 0 && fwd < 0)) {
       st.mode = 'ground'; st.car = null; st.vy = 2;
-      p.position.x += Math.sin(p.heading) * 0.1; p.position.z += Math.cos(p.heading) * 0.1;
+      p.position.x += Math.sin(p.heading) * 0.1 * st.scale; p.position.z += Math.cos(p.heading) * 0.1 * st.scale;
     }
   }
 
@@ -483,7 +532,7 @@ function createCockroach({ scene, controllerManager: cm, trafficSystem, cameraSy
         const dx = c.mesh.position.x - x, dz = c.mesh.position.z - z;
         const d2 = dx * dx + dz * dz;
         if (d2 > 45 * 45) c.active = false;
-        else if (st.mode !== 'dead' && d2 < 0.06 * 0.06 && Math.abs(c.mesh.position.y - p.position.y) < 0.08) {
+        else if (st.mode !== 'dead' && d2 < (0.06 * st.scale) ** 2 && Math.abs(c.mesh.position.y - p.position.y) < 0.08 * st.scale) {
           c.active = false;
           st.eaten++;
           st.boost = BOOST_TIME;
@@ -502,6 +551,30 @@ function createCockroach({ scene, controllerManager: cm, trafficSystem, cameraSy
       c.mesh.visible = c.active;
       if (c.active) { c.mesh.rotation.y = elapsed * 2 + c.mesh.position.x; }
     }
+    for (const c of redCrumbs) {
+      if (c.active) {
+        const dx = c.mesh.position.x - x, dz = c.mesh.position.z - z;
+        const d2 = dx * dx + dz * dz;
+        if (d2 > 45 * 45) c.active = false;
+        else if (st.mode !== 'dead' && d2 < (0.06 * st.scale) ** 2 && Math.abs(c.mesh.position.y - p.position.y) < 0.08 * st.scale) {
+          c.active = false;
+          st.redEaten++;
+          st.giant = GIANT_TIME;
+          st.lastEvent = 'ate a red crumb: giant';
+        }
+      }
+      if (!c.active) {
+        for (let a = 0; a < 6 && !c.active; a++) {
+          const ang = Math.random() * Math.PI * 2, rr = 4 + Math.random() * 28;
+          const cx = x + Math.sin(ang) * rr, cz = z + Math.cos(ang) * rr;
+          if (blockingCollider(cx, 0.1, cz)) continue;
+          c.mesh.position.set(cx, streetLevel(cx, cz) + 0.008, cz);
+          c.active = true;
+        }
+      }
+      c.mesh.visible = c.active;
+      if (c.active) { c.mesh.rotation.y = elapsed * 1.4 + c.mesh.position.z; }
+    }
   }
 
   function poseModel(dt) {
@@ -512,9 +585,10 @@ function createCockroach({ scene, controllerManager: cm, trafficSystem, cameraSy
     else if (st.mode === 'ped' && st.ped.h < 1.72 * (st.ped.p.rig.s || 1) - 0.01 && st.ped.h > 0.01) pitch = -Math.PI / 2;
     else if (st.mode === 'car' && st.car.h < carRoof(st.car.car) - 0.01 && st.car.h > 0.01) pitch = -Math.PI / 2;
     r.rotation.set(pitch, p.heading, 0);
-    if (pitch) { r.position.x -= Math.sin(p.heading) * 0.01; r.position.z -= Math.cos(p.heading) * 0.01; }
+    r.scale.setScalar(st.scale);
+    if (pitch) { r.position.x -= Math.sin(p.heading) * 0.01 * st.scale; r.position.z -= Math.cos(p.heading) * 0.01 * st.scale; }
     const moving = Math.abs(key('forward') - key('backward')) > 0 || Math.abs(p.speed) > 0.05;
-    st.legPhase += dt * (moving ? (st.boost > 0 ? 60 : 22) : 0);
+    st.legPhase += dt * (moving ? ((st.boost > 0 || st.scale > 1) ? 60 : 22) : 0);
     for (const leg of model.legs) {
       const { base, group: g, side } = leg.userData;
       const ph = st.legPhase + g * Math.PI;
@@ -543,8 +617,11 @@ function createCockroach({ scene, controllerManager: cm, trafficSystem, cameraSy
     if (hudTimer > 0) return;
     hudTimer = 0.2;
     const lines = [
-      `SLOP COCKROACH · deaths ${st.deaths} · crumbs ${st.eaten}`,
-      st.mode === 'dead' ? `SPLAT (${st.lastEvent}). Respawning...` : (st.boost > 0 ? `CRUMB SPEED ${Math.ceil(st.boost)} s` : `status: ${st.lastEvent || 'scuttling'}`),
+      `SLOP COCKROACH · deaths ${st.deaths} · crumbs ${st.eaten} · red ${st.redEaten}`,
+      st.mode === 'dead' ? `SPLAT (${st.lastEvent}). Respawning...`
+        : (st.giant > 0 && st.boost > 0) ? `GIANT ROACH ${Math.ceil(st.giant)} s · CRUMB SPEED ${Math.ceil(st.boost)} s`
+        : st.giant > 0 ? `GIANT ROACH ${Math.ceil(st.giant)} s`
+        : (st.boost > 0 ? `CRUMB SPEED ${Math.ceil(st.boost)} s` : `status: ${st.lastEvent || 'scuttling'}`),
       'W/S crawl & climb · A/D turn · Space jump / let go'
     ];
     hud.textContent = '';
@@ -552,8 +629,35 @@ function createCockroach({ scene, controllerManager: cm, trafficSystem, cameraSy
   }
 
   // Replaces the walker controller
+  let audio = null;
+  const screamUntil = [];
+  function maybeScream(ped) {
+    if (!audio || !audio.ready || !audio.enabled || audio.context?.state !== 'running') return;
+    const now = audio.context.currentTime;
+    if (now < (ped._roachScream || 0)) return;
+    for (let i = screamUntil.length - 1; i >= 0; i--) if (screamUntil[i] <= now) screamUntil.splice(i, 1);
+    if (screamUntil.length >= 3) return;
+    const played = audio.emit('scream', {
+      id: ped, x: ped.x, y: 0.2, z: ped.z, seed: ped.rig?.seed || 1
+    }, { intensity: 0.85 });
+    if (!played) return;
+    ped._roachScream = now + 4;
+    screamUntil.push(now + 0.55);
+  }
+  p.onGiantPed = maybeScream;
+
+  function publishGiant() {
+    const foot = giantFootprint(st.scale);
+    p.roachScale = st.scale;
+    p.isGiantRoach = foot.active;
+    p.giantHalfW = foot.halfW;
+    p.giantHalfL = foot.halfL;
+  }
+
   cm.updatePerson = function (dt, elapsed = 0) {
+    const fromX = p.position.x, fromZ = p.position.z;
     if (st.boost > 0) st.boost = Math.max(0, st.boost - dt);
+    stepGiant(st, dt);
     const fwd = key('forward') - key('backward') * 0.6;
     const turn = key('left') - key('right');
     if (st.mode === 'dead') {
@@ -564,6 +668,17 @@ function createCockroach({ scene, controllerManager: cm, trafficSystem, cameraSy
     else if (st.mode === 'car') updateCar(dt, fwd, turn);
     else updateGround(dt, fwd, turn);
     updateCrumbs(dt, elapsed);
+    // Shrinking (or a shove from a car) must leave the body outside solid walls.
+    if (st.scale > 1 && (st.mode === 'ground' || st.mode === 'wall')) {
+      cm.resolveHorizontalCollision(p.position, RADIUS * st.scale, null, null);
+      if (st.mode === 'ground') {
+        const floor = surfaceAt(p.position.x, p.position.z, p.position.y + 1);
+        if (p.position.y < floor) p.position.y = floor;
+      }
+    }
+    publishGiant();
+    p.prevX = fromX;
+    p.prevZ = fromZ;
     poseModel(dt);
     updateHud(dt);
   };
@@ -580,35 +695,36 @@ function createCockroach({ scene, controllerManager: cm, trafficSystem, cameraSy
     const climbingPed = st.mode === 'ped' && model.root.rotation.x !== 0;
     const ridingPed = st.mode === 'ped' && !climbingPed;
     const vertical = st.mode === 'wall' || climbingPed || (st.mode === 'car' && model.root.rotation.x !== 0);
-    const back = st.boost > 0 ? 0.45 : 0.28;
+    const sc = st.scale;
+    const back = (st.boost > 0 ? 0.45 : 0.28) * sc;
     // Safe origin the camera ray starts from: just off the surface the roach is on
-    origin.set(pos.x, pos.y + 0.03, pos.z);
+    origin.set(pos.x, pos.y + 0.03 * sc, pos.z);
     if (ridingPed) {
       const ped = st.ped.p, yaw = ped.rig.yaw ?? ped.heading ?? p.heading;
       const fx = Math.sin(yaw), fz = Math.cos(yaw);
       // Sit on the head: just behind/above the crown, looking down the street ahead
-      want.set(pos.x - fx * 0.55, pos.y + 0.26, pos.z - fz * 0.55);
-      wantLook.set(pos.x + fx * 3, pos.y - 0.85, pos.z + fz * 3);
+      want.set(pos.x - fx * 0.55 * sc, pos.y + 0.26 * sc, pos.z - fz * 0.55 * sc);
+      wantLook.set(pos.x + fx * 3 * sc, pos.y - 0.85 * sc, pos.z + fz * 3 * sc);
     } else if (climbingPed) {
       const ped = st.ped.p, ax = Math.sin(st.ped.ang), az = Math.cos(st.ped.ang);
-      origin.set(pos.x + ax * 0.04, pos.y, pos.z + az * 0.04);
-      want.set(ped.x + ax * 0.75, pos.y + 0.05, ped.z + az * 0.75);
-      wantLook.set(pos.x, pos.y + 0.12, pos.z);
+      origin.set(pos.x + ax * 0.04 * sc, pos.y, pos.z + az * 0.04 * sc);
+      want.set(ped.x + ax * 0.75 * sc, pos.y + 0.05 * sc, ped.z + az * 0.75 * sc);
+      wantLook.set(pos.x, pos.y + 0.12 * sc, pos.z);
     } else if (vertical) {
       // Outside the wall: back along the outward normal (-heading), slightly below, looking up the wall
-      origin.set(pos.x - hx * 0.05, pos.y, pos.z - hz * 0.05);
-      want.set(pos.x - hx * back, pos.y - 0.1, pos.z - hz * back);
-      wantLook.set(pos.x + hx * 0.02, pos.y + 0.35, pos.z + hz * 0.02);
+      origin.set(pos.x - hx * 0.05 * sc, pos.y, pos.z - hz * 0.05 * sc);
+      want.set(pos.x - hx * back, pos.y - 0.1 * sc, pos.z - hz * back);
+      wantLook.set(pos.x + hx * 0.02 * sc, pos.y + 0.35 * sc, pos.z + hz * 0.02 * sc);
     } else {
-      want.set(pos.x - hx * back, pos.y + 0.13, pos.z - hz * back);
-      wantLook.set(pos.x + hx * 0.5, pos.y + 0.05, pos.z + hz * 0.5);
+      want.set(pos.x - hx * back, pos.y + 0.13 * sc, pos.z - hz * back);
+      wantLook.set(pos.x + hx * 0.5 * sc, pos.y + 0.05 * sc, pos.z + hz * 0.5 * sc);
     }
     if (st.orbit != null) {
       st.orbit += dt * 1.3;
-      want.set(pos.x + Math.sin(st.orbit) * 0.11, pos.y + 0.05, pos.z + Math.cos(st.orbit) * 0.11);
-      wantLook.set(pos.x, pos.y + 0.006, pos.z);
+      want.set(pos.x + Math.sin(st.orbit) * 0.11 * sc, pos.y + 0.05 * sc, pos.z + Math.cos(st.orbit) * 0.11 * sc);
+      wantLook.set(pos.x, pos.y + 0.006 * sc, pos.z);
     }
-    if (st.mode === 'dead') { want.set(pos.x, pos.y + 0.35, pos.z - 0.05); wantLook.copy(pos); }
+    if (st.mode === 'dead') { want.set(pos.x, pos.y + 0.35 * sc, pos.z - 0.05 * sc); wantLook.copy(pos); }
     const k = camInit && st.orbit == null ? 1 - Math.exp(-dt * 10) : 1;
     camInit = true;
     camPos.lerp(want, k);
@@ -643,7 +759,8 @@ function createCockroach({ scene, controllerManager: cm, trafficSystem, cameraSy
   }
   function resolveCamera(from, cam) {
     const d = from.distanceTo(cam);
-    const n = Math.max(2, Math.ceil(d / 0.015));
+    // Short pulls keep the original 1.5 cm probe. A giant camera is tens of metres back.
+    const n = d <= 0.72 ? Math.max(2, Math.ceil(d / 0.015)) : Math.max(2, Math.ceil(d / Math.max(0.015, d / 48)));
     let ok = 0;
     for (let i = 1; i <= n; i++) {
       probe.lerpVectors(from, cam, i / n);
@@ -656,6 +773,7 @@ function createCockroach({ scene, controllerManager: cm, trafficSystem, cameraSy
   const api = {
     group, state: st, entity: p,
     updateCamera,
+    attachAudio(system) { audio = system; },
     teleport(x, z, heading = p.heading) {
       st.mode = 'ground'; st.ped = st.car = st.wall = null;
       p.position.set(x, 0, z);
@@ -711,4 +829,4 @@ function createCockroach({ scene, controllerManager: cm, trafficSystem, cameraSy
   return api;
 }
 
-export { createCockroach };
+export { createCockroach, stepGiant, giantFootprint, roachVulnerable, GIANT_TIME, GIANT_SCALE, GIANT_HALF_W, GIANT_HALF_L };

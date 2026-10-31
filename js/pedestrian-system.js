@@ -620,12 +620,55 @@ function createPedestrianSystem(network, { player, nearEdges, nearSignals, mayCr
     pedCrowd.add(p.rig, Math.sqrt(distSq));
   }
 
+  // A giant roach is already the player vehicle (avoidPlayer). Anyone nearby with a clear
+  // street line also runs away along their sidewalk, and a body contact reuses the dive.
+  function sightClear(x0, z0, x1, z1) {
+    for (let i = 1; i <= 5; i++) {
+      const t = i / 6;
+      if (blockAt(x0 + (x1 - x0) * t, z0 + (z1 - z0) * t)) return false;
+    }
+    return true;
+  }
+
+  function frightenGiant(p) {
+    const dx = p.x - player.x, dz = p.z - player.z;
+    const d2 = dx * dx + dz * dz;
+    if (d2 > 625) return;
+    if (d2 > 0.04 && !sightClear(player.x, player.z, p.x, p.z)) return;
+    const lateral = dx * player.fz - dz * player.fx;
+    const along = dx * player.fx + dz * player.fz;
+    const touching = Math.abs(lateral) < player.halfW + 0.4 && Math.abs(along) < player.halfL + 0.4;
+    const diving = clock - p.diveStart < PEDESTRIAN_DIVE_DURATION;
+    if (!diving) {
+      const awayX = d2 > 1e-6 ? dx : (player.fx || 0);
+      const awayZ = d2 > 1e-6 ? dz : (player.fz || 1);
+      const track = awayX * p.ux + awayZ * p.uz;
+      const dir = track >= 0 ? 1 : -1;
+      if (!p.resumeDir) p.resumeDir = p.dir;
+      if (p.dir !== dir) turnPed(p, dir);
+      p.pause = 0;
+      p.avoidSpeed = PED_ESCAPE_SPEED;
+      p.avoidT = p.t + dir * (touching ? Math.max(PED_DIVE_DISTANCE, 8) : 14);
+      p.avoidUntil = Math.max(p.avoidUntil, clock + (touching ? PEDESTRIAN_DIVE_DURATION + 3.5 : 3.5));
+      if (p.conversation) endConversation(p.conversation);
+      if (touching) {
+        p.diveStart = clock;
+        p.diveT = p.t + dir * PED_DIVE_DISTANCE;
+        p.diveHeading = Math.atan2(awayX, awayZ);
+        p.dodgeTarget = 0;
+      }
+    }
+    if (typeof player.entity.onGiantPed === 'function') player.entity.onGiantPed(p);
+  }
+
   function update(dt, elapsed, x, z, jump, view, activeMode) {
     clock = elapsed;
     focusX = x;
     focusZ = z;
     hasView = view;
-    pedRange = player.active && (activeMode === 'car' || activeMode === 'cyclist') && player.entity.position.y > -1
+    const ent = player.entity;
+    const giantRoach = !!(ent && ent.isRoach && ent.roachScale > 1 && ent.position.y < 6);
+    pedRange = player.active && (activeMode === 'car' || activeMode === 'cyclist' || giantRoach) && player.entity.position.y > -1
       ? Math.sqrt(player.vx * player.vx + player.vz * player.vz) * PED_LOOKAHEAD + player.halfL + 6 : 0;
 
     for (const n of walkedNodes) n.walkers.length = 0;
@@ -645,7 +688,9 @@ function createPedestrianSystem(network, { player, nearEdges, nearSignals, mayCr
     }
     for (let i = 0; i < NUM_PEDS; i++) {
       const p = peds[i];
-      if (p.placed) avoidPlayer(p);
+      if (!p.placed) continue;
+      if (giantRoach) frightenGiant(p);
+      avoidPlayer(p);
     }
     meet(dt);
     gatherCurbs();
