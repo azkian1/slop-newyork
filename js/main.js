@@ -19,6 +19,7 @@ import { LightingSystem } from './lighting.js';
 import { NYCMapSystem } from './nyc-map.js';
 import { setupSceneCulling, updateSceneCulling } from './scene-culling.js';
 import { CityAudioSystem } from './audio-system.js';
+import { createCockroach } from './cockroach.js';
 
 // Application setup, shader warm-up and frame loop.
 
@@ -59,7 +60,8 @@ async function initApp() {
   });
   renderer.setPixelRatio(1.0);
   renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.shadowMap.enabled = true;
+  const LITE = new URLSearchParams(location.search).has('lite'); // software-rendering test mode: no shadows / post FX
+  renderer.shadowMap.enabled = !LITE;
   renderer.lighting = new ClusteredLighting(256, 32, 28, 48);
   container.appendChild(renderer.domElement);
 
@@ -119,7 +121,7 @@ async function initApp() {
   const controllerManager = new ThirdPersonControllerManager(scene, allColliders);
   // Reuse teleport placement so saved players return at rest, close to their last positions.
   try {
-    const saved = JSON.parse(localStorage.getItem('nyc-player-state'));
+    const saved = null; // SLOP COCKROACH: always start fresh as the roach
     if (saved?.version === 1) {
       for (const mode of Object.keys(controllerManager.entities)) {
         const p = saved.entities?.[mode];
@@ -141,6 +143,10 @@ async function initApp() {
   }
 
   const cameraSystem = new CameraSystem(renderer.domElement, controllerManager);
+  controllerManager.setMode('person');
+  const roach = createCockroach({ scene, controllerManager, trafficSystem, cameraSystem });
+  window.roach = roach; // handy in the console
+  window.__ts = trafficSystem;
   const touchControls = new TouchControls(controllerManager);
   const soundButton = document.getElementById('btn-sound');
   const audioSystem = new CityAudioSystem({ controllerManager, trafficSystem, highwayTraffic, streetDetails }, {
@@ -180,7 +186,8 @@ async function initApp() {
     scene.getObjectByName('StoreClusteredLights'),
     scene.getObjectByName('StreetClusteredLights'),
     ...Object.values(controllerManager.entities).map((entity) => entity.mesh),
-    controllerManager.entities.cyclist.helmet
+    controllerManager.entities.cyclist.helmet,
+    roach.group
   ];
   scene.updateMatrixWorld(true);
   scene.matrixWorldAutoUpdate = false;
@@ -271,13 +278,13 @@ async function initApp() {
 
   // Keyboard guide for each mode: [keys, action]
   const controlHints = {
-    person: [[['W', 'S'], 'Walk / Run'], [['A', 'D'], 'Turn'], [['Space'], 'Jump'], [['Drag'], 'Orbit']],
+    person: [[['W', 'S'], 'Crawl / Climb'], [['A', 'D'], 'Turn'], [['Space'], 'Jump / Let go']],
     car: [[['W', 'S'], 'Drive / Reverse'], [['A', 'D'], 'Steer'], [['B'], 'Horn'], [['Drag'], 'Orbit']],
     cyclist: [[['W', 'S'], 'Pedal / Brake'], [['A', 'D'], 'Lean & Turn'], [['Drag'], 'Orbit']],
     helicopter: [[['W', 'S'], 'Pitch'], [['A', 'D'], 'Yaw'], [['Space', 'E'], 'Ascend'], [['Q', 'C'], 'Descend']]
   };
   // Top speeds in mph (controllers.js caps them at 8.2, 36, 19 & 52 m/s): full scale of the speed meter
-  const topSpeedMph = { person: 18, car: 81, cyclist: 43, helicopter: 116 };
+  const topSpeedMph = { person: 32, car: 81, cyclist: 43, helicopter: 116 };
 
   function renderControlHints(mode) {
     if (!elControlsHint) return;
@@ -307,6 +314,7 @@ async function initApp() {
   }
 
   function selectMode(mode) {
+    if (window.roach) mode = 'person'; // SLOP COCKROACH: roaches can't drive
     controllerManager.setMode(mode);
     touchControls.setMode(controllerManager.activeMode);
     gamepadControls.reset();
@@ -679,6 +687,12 @@ async function initApp() {
   if (elFps) elFps.textContent = '60';
 
   renderer.setAnimationLoop((now) => {
+    // Frame stepping for scripted recordings: window.__roachHold = true, then bump window.__roachStep
+    if (window.__roachHold && warmedUp) {
+      if (!(window.__roachStep > 0)) { lastTime = now; return; }
+      window.__roachStep--;
+      lastTime = now - 50;
+    }
     const rawDt = (now - lastTime) * 0.001;
     lastTime = now;
     const dt = Math.min(Math.max(rawDt, 0.001), 0.05);
@@ -688,6 +702,7 @@ async function initApp() {
     gamepadControls.update(dt);
     controllerManager.update(dt, elapsed, cameraSystem.initialized ? cameraSystem.currentPos : null);
     cameraSystem.update(dt, elapsed);
+    roach.updateCamera(dt);
     streetDetails.signalClock.value = elapsed;
     trafficSystem.update(
       dt,
@@ -733,7 +748,7 @@ async function initApp() {
       for (const o of culled) o.frustumCulled = true;
       markInit('warmup');
     }
-    renderPipeline.render();
+    if (window.__roachNoRender) {} else if (LITE) renderer.render(scene, cameraSystem.camera); else renderPipeline.render();
     if (!warmedUp) {
       warmedUp = true;
       markInit('firstFrame');

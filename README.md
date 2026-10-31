@@ -1,3 +1,19 @@
+# Slop Cockroach
+
+A silly mod of [Slop New York](https://github.com/mrdoob/slop-newyork) by [Mr.doob](https://github.com/mrdoob): you are a 4 cm cockroach in a full-size Manhattan.
+
+- W/S crawl (and climb), A/D turn, Space jump / let go
+- Walk into anything (buildings, poles, people, cars) and keep pushing to climb it
+- You only die from below: a pedestrian's footstep or a car wheel while you are on the street
+- Crumbs on the street give 60 s of car speed
+
+Run: `python3 -m http.server` in this folder, open http://localhost:8000 (WebGPU browser recommended; `?lite` turns off shadows and post FX for slow machines).
+The mod lives in `js/cockroach.js` plus small hooks in `js/main.js`, `js/controllers.js` and `js/traffic.js`.
+
+All credit for the city, traffic and pedestrians goes to Mr.doob's Slop New York (MIT, see LICENSE).
+
+---
+
 # Slop New York
 
 A New York City simulation built with [three.js](https://threejs.org/), WebGPURenderer, and TSL. Explore Manhattan on foot, by car, by bicycle, or by helicopter.

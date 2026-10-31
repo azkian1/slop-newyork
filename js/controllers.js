@@ -1012,7 +1012,12 @@ class ThirdPersonControllerManager {
     if (p) {
       const dx = focus ? p.position.x - focus.x : 0;
       const dz = focus ? p.position.z - focus.z : 0;
-      if (this.activeMode === 'person' || dx * dx + dz * dz <= maxDistSq) {
+      if (p.isRoach) {
+        // SLOP COCKROACH: the walker is replaced by the roach; draw nothing for it (no body, no contact shadow)
+        if (p.mesh) p.mesh.visible = false;
+        if (!p._charHidden) { p.crowd.begin(); p.crowd.end(); p._charHidden = p.crowd.updates > 2; }
+        p.rig.placed = false;
+      } else if (this.activeMode === 'person' || dx * dx + dz * dz <= maxDistSq) {
         p._charHidden = false;
         if (p.mesh) p.mesh.visible = true;
         const air = p.position.y - this.getGroundHeight(p.position.x, p.position.z, 'person');
@@ -1341,4 +1346,4 @@ class ThirdPersonControllerManager {
   }
 }
 
-export { ThirdPersonControllerManager };
+export { ThirdPersonControllerManager, buildingContact, collisionBody };

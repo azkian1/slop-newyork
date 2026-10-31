@@ -1891,7 +1891,7 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections) {
     refreshNear();
     updateView(camera);
 
-    player.active = Boolean(playerEntity && activeMode !== 'helicopter' && playerEntity.position.y < 2.6);
+    player.active = Boolean(playerEntity && !playerEntity.isRoach && activeMode !== 'helicopter' && playerEntity.position.y < 2.6);
     if (playerEntity) {
       const heading = playerEntity.heading || 0;
       const speed = playerEntity.speed || 0;
