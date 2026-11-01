@@ -4,13 +4,12 @@
 
 import * as THREE from 'three/webgpu';
 import { paintDrop } from './drop-paint.js';
-import { buildingContact, collisionBody } from './controllers.js';
+import { buildingContact } from './controllers.js';
 import { makeBot } from './grok-bot.js';
-import { standOffsets } from './drop-place.js';
+import { chooseStand, ejectCircle } from './drop-place.js';
 import { xProfileUrl } from './drop-schema.js';
 
 const SEEN_KEY = 'slop-drops-seen';
-const BODY = collisionBody('person', 0.2, 0);
 
 function loadSeen() {
   try {
@@ -65,7 +64,7 @@ function makeCard(drop) {
   return { mesh, tex, painted, worldH, worldW };
 }
 
-export async function createDrops({ scene, cameraSystem, controllerManager, mapSystem, renderer, network }) {
+export async function createDrops({ scene, cameraSystem, controllerManager, mapSystem, renderer, network, obstacles }) {
   let rows;
   try {
     const res = await fetch(new URL('../data/drops.json', import.meta.url), { cache: 'no-store' });
@@ -95,19 +94,39 @@ export async function createDrops({ scene, cameraSystem, controllerManager, mapS
 
   const items = [];
   const contact = { nx: 0, nz: 0, depth: 0 };
+  const standBody = { car: false, radius: 0.16, extX: 0.16, extZ: 0.16, bottom: 0.02, top: 0.35 };
+  function standHeight(actor, qx, qz) {
+    let y = cm.getGroundHeight(qx, qz, 'person');
+    if (actor.drop.surface !== 'roof') return y;
+    let top = 0;
+    for (const c of cm.nearColliders(qx, qz, 2)) {
+      if (qx < c.minX || qx > c.maxX || qz < c.minZ || qz > c.maxZ) continue;
+      if (c.maxY > top && c.maxY < 220) top = c.maxY;
+    }
+    return top > 3 ? top : y;
+  }
   function teleportTo(actor) {
     if (cameraSystem._focus) cameraSystem._focus = null;
-    const heading = Number.isFinite(actor.drop.yaw) ? actor.drop.yaw : 0;
-    let spot = null;
-    const reach = Math.max(1.4, (actor.radius || 1) + 0.8);
-    for (const [ox, oz] of standOffsets(heading, reach)) {
-      spot = cm.findTeleportPosition(actor.x + ox, actor.z + oz, heading, 0);
-      if (spot) break;
+    const cam = cameraSystem.camera.position;
+    let fx = cam.x - actor.x;
+    let fz = cam.z - actor.z;
+    if (fx * fx + fz * fz < 0.36) {
+      const yaw = Number.isFinite(actor.drop.yaw) ? actor.drop.yaw : 0;
+      fx = Math.sin(yaw);
+      fz = Math.cos(yaw);
     }
-    if (!spot) spot = cm.findTeleportPosition(actor.x, actor.z, heading, 0);
+    const spot = chooseStand(actor.x, actor.z, actor.radius, fx, fz, (qx, qz) => {
+      const y = standHeight(actor, qx, qz);
+      for (const c of cm.nearColliders(qx, qz, 1.2)) {
+        if (buildingContact(c, qx, y + 0.04, qz, standBody)) return null;
+      }
+      return { x: qx, z: qz };
+    });
     if (!spot) return;
-    if (window.roach && window.roach.teleport) window.roach.teleport(spot.x, spot.z, heading);
-    else cm.teleportActiveTo(spot.x, spot.z, heading);
+    if (cameraSystem.resetForTeleport) cameraSystem.resetForTeleport();
+    const aim = { x: actor.x, y: actor.y + Math.min(actor.worldH * 0.42, 6), z: actor.z };
+    if (window.roach && window.roach.teleport) window.roach.teleport(spot.x, spot.z, spot.heading, aim);
+    else cm.teleportActiveTo(spot.x, spot.z, spot.heading);
   }
   const newest = [...rows].sort((a, b) => Date.parse(b.created) - Date.parse(a.created));
 
@@ -122,8 +141,13 @@ export async function createDrops({ scene, cameraSystem, controllerManager, mapS
       grounded: !fresh,
       falling: false,
       pending: fresh,
-      radius: Math.max(0.35, Math.min(card.worldW, card.worldH) * 0.28)
+      radius: Math.max(0.55, card.worldW * 0.5)
     };
+    separate(actor);
+    actor.y = groundY(cm, { ...actor.drop, x: actor.x, z: actor.z });
+    separate(actor);
+    actor.drop.x = actor.x;
+    actor.drop.z = actor.z;
     card.mesh.position.set(actor.x, actor.y + card.worldH * 0.5, actor.z);
     group.add(card.mesh);
     if (fresh) {
@@ -290,15 +314,30 @@ export async function createDrops({ scene, cameraSystem, controllerManager, mapS
   }
 
   function separate(actor) {
-    for (const c of cm.nearColliders(actor.x, actor.z, actor.radius + 2)) {
-      if (!buildingContact(c, actor.x, actor.y + 0.2, actor.z, { ...BODY, radius: actor.radius, extX: actor.radius, extZ: actor.radius }, contact)) continue;
-      actor.x += contact.nx * contact.depth;
-      actor.z += contact.nz * contact.depth;
-      const vn = actor.vx * contact.nx + actor.vz * contact.nz;
+    const body = {
+      car: false,
+      radius: actor.radius,
+      extX: actor.radius,
+      extZ: actor.radius,
+      bottom: 0.02,
+      top: Math.max(0.8, actor.worldH)
+    };
+    const stop = (nx, nz) => {
+      const vn = actor.vx * nx + actor.vz * nz;
       if (vn < 0) {
-        actor.vx -= contact.nx * vn;
-        actor.vz -= contact.nz * vn;
+        actor.vx -= nx * vn;
+        actor.vz -= nz * vn;
       }
+    };
+    for (let pass = 0; pass < 6; pass++) {
+      const near = cm.nearColliders(actor.x, actor.z, Math.max(8, actor.radius + 4));
+      const ejected = ejectCircle(actor.x, actor.z, near, (c, x, z) => {
+        if (!buildingContact(c, x, actor.y, z, body, contact)) return null;
+        return { nx: contact.nx, nz: contact.nz, depth: contact.depth };
+      }, 1, stop);
+      actor.x = ejected.x;
+      actor.z = ejected.z;
+      if (!ejected.hit) break;
     }
   }
 
@@ -426,6 +465,8 @@ export async function createDrops({ scene, cameraSystem, controllerManager, mapS
           actor.falling = false;
           actor.grounded = true;
         }
+        separate(actor);
+        if (actor.grounded) actor.y = groundY(cm, { ...actor.drop, x: actor.x, z: actor.z });
       } else if (actor.grounded) {
         actor.x += actor.vx * dt;
         actor.z += actor.vz * dt;
@@ -445,7 +486,25 @@ export async function createDrops({ scene, cameraSystem, controllerManager, mapS
       }
     }
     group.updateMatrixWorld(true);
+    publishObstacles();
   }
+
+  const published = items.map(() => ({ x: 0, z: 0, radius: 0 }));
+  function publishObstacles() {
+    if (!obstacles) return;
+    let n = 0;
+    for (let i = 0; i < items.length; i++) {
+      const actor = items[i];
+      if (!actor.grounded || !actor.mesh.visible) continue;
+      const slot = published[n++];
+      slot.x = actor.x;
+      slot.z = actor.z;
+      slot.radius = actor.radius;
+    }
+    obstacles.length = n;
+    for (let i = 0; i < n; i++) obstacles[i] = published[i];
+  }
+  publishObstacles();
 
   const tip = document.createElement('div');
   tip.id = 'drop-tip';

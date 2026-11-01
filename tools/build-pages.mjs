@@ -46,7 +46,7 @@ const preloadBlock = [`./dist/${hashed}`, ...staticParts]
 html = html.replace('  <!-- One bundled module.', `${preloadBlock}  <!-- One bundled module.`);
 writeFileSync('index.html', html);
 
-const precache = [`./dist/${hashed}`, './js/building-geodata.bin.gz', './js/tree-geodata.bin.gz', './css/style.css'];
+const precache = [`./dist/${hashed}`, './js/building-geodata.bin.gz', './js/tree-geodata.bin.gz'];
 for (const name of readdirSync(outdir)) {
   if (name.startsWith('part-') && name.endsWith('.js')) precache.push(`./dist/${name}`);
 }
@@ -75,7 +75,10 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(fetch(event.request, { cache: 'no-store' }));
     return;
   }
-  const asset = url.pathname.includes('/dist/') || url.pathname.endsWith('.bin.gz') || url.pathname.endsWith('.css');
+  // Leave stylesheets to the network. The loader is inline, and a worker that is
+  // still starting must not hold the sheet that used to block the first paint.
+  if (url.pathname.endsWith('.css')) return;
+  const asset = url.pathname.includes('/dist/') || url.pathname.endsWith('.bin.gz');
   if (!asset) return;
   event.respondWith((async () => {
     const cache = await caches.open(CACHE);

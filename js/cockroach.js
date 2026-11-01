@@ -741,7 +741,33 @@ function createCockroach({ scene, controllerManager: cm, trafficSystem, cameraSy
     updateHud(dt);
   };
 
-  // Low camera, slightly behind; rotates onto walls with the roach
+  // Low camera, slightly behind; rotates onto walls with the roach.
+  // Dragging orbits that camera around the roach. Pitch stays inside the chase clamps,
+  // and the camera is never allowed under the surface the roach is standing on.
+  function orbitAround(pos, want, wantLook) {
+    const yaw = cameraSystem.orbitYawOffset || 0;
+    const pitch = Math.max(-0.32, Math.min(0.68, cameraSystem.orbitPitchOffset || 0));
+    if (Math.abs(yaw) < 1e-4 && Math.abs(pitch - 0.09) < 1e-3) return;
+    const dx = want.x - pos.x;
+    const dy = want.y - pos.y;
+    const dz = want.z - pos.z;
+    const c = Math.cos(yaw);
+    const s = Math.sin(yaw);
+    const rx = dx * c + dz * s;
+    const rz = -dx * s + dz * c;
+    const horiz = Math.hypot(rx, rz);
+    const span = Math.hypot(horiz, dy);
+    const base = Math.atan2(dy, Math.max(horiz, 1e-4));
+    const next = Math.max(-0.15, Math.min(1.2, base + (pitch - 0.09)));
+    const reach = Math.cos(next) * span;
+    const dirx = horiz > 1e-4 ? rx / horiz : 0;
+    const dirz = horiz > 1e-4 ? rz / horiz : 1;
+    want.set(pos.x + dirx * reach, pos.y + Math.sin(next) * span, pos.z + dirz * reach);
+    const lx = wantLook.x - pos.x;
+    const lz = wantLook.z - pos.z;
+    wantLook.x = pos.x + lx * c + lz * s;
+    wantLook.z = pos.z + -lx * s + lz * c;
+  }
   cameraSystem.camera.near = 0.01;
   cameraSystem.camera.updateProjectionMatrix();
   const camPos = new THREE.Vector3(), camLook = new THREE.Vector3(), want = new THREE.Vector3(), wantLook = new THREE.Vector3();
@@ -749,6 +775,8 @@ function createCockroach({ scene, controllerManager: cm, trafficSystem, cameraSy
   function updateCamera(dt) {
     if (cameraSystem._focus) return;
     if (cm.activeMode !== 'person' || cameraSystem.getActivePreset().category !== 'follow') return;
+    if (st.aim && (Math.abs(cameraSystem.orbitYawOffset) > 0.01 || Math.abs(cameraSystem.orbitPitchOffset - 0.09) > 0.02)) st.aim = null;
+    if (st.aim && (p.position.x - st.aimX) ** 2 + (p.position.z - st.aimZ) ** 2 > 0.25) st.aim = null;
     const hx = Math.sin(p.heading), hz = Math.cos(p.heading);
     const pos = st.mode === 'dead' ? splat.position : p.position;
     const climbingPed = st.mode === 'ped' && model.root.rotation.x !== 0;
@@ -784,12 +812,17 @@ function createCockroach({ scene, controllerManager: cm, trafficSystem, cameraSy
       wantLook.set(pos.x, pos.y + 0.006 * sc, pos.z);
     }
     if (st.mode === 'dead') { want.set(pos.x, pos.y + 0.35 * sc, pos.z - 0.05 * sc); wantLook.copy(pos); }
+    if (st.aim && st.mode !== 'dead') wantLook.set(st.aim.x, st.aim.y, st.aim.z);
+    else if (st.mode !== 'dead' && st.orbit == null) orbitAround(pos, want, wantLook);
+    const floorY = pos.y + 0.03 * sc;
+    if (want.y < floorY) want.y = floorY;
     const k = camInit && st.orbit == null ? 1 - Math.exp(-dt * 10) : 1;
     camInit = true;
     camPos.lerp(want, k);
     camLook.lerp(wantLook, k);
     // Collision: never let the (smoothed) camera end up inside a building, roof, car or under the street
     resolveCamera(origin, camPos);
+    if (camPos.y < pos.y + 0.03 * sc) camPos.y = pos.y + 0.03 * sc;
     cameraSystem.camera.position.copy(camPos);
     cameraSystem.camera.lookAt(camLook);
     cameraSystem.currentPos.copy(camPos);
@@ -833,11 +866,16 @@ function createCockroach({ scene, controllerManager: cm, trafficSystem, cameraSy
     group, state: st, entity: p,
     updateCamera,
     attachAudio(system) { audio = system; },
-    teleport(x, z, heading = p.heading) {
+    teleport(x, z, heading = p.heading, aim = null) {
       st.mode = 'ground'; st.ped = st.car = st.wall = null;
       p.position.set(x, 0, z);
       p.position.y = surfaceAt(x, z, 1000) > 100 ? streetLevel(x, z) : surfaceAt(x, z, 2);
       p.heading = heading; st.lastSafe.copy(p.position); camInit = false;
+      st.aim = aim && Number.isFinite(aim.x) ? { x: aim.x, y: aim.y, z: aim.z } : null;
+      st.aimX = p.position.x;
+      st.aimZ = p.position.z;
+      cameraSystem.orbitYawOffset = 0;
+      cameraSystem.orbitPitchOffset = 0.09;
     },
     nearestPed(maxD = 40) {
       let best = null, bd = maxD * maxD;

@@ -62,10 +62,9 @@ class CameraSystem {
       // Only two touch pointers may share a gesture; mouse and pen drags stay independent.
       if (pointers.size && (e.pointerType !== 'touch' || pointers.values().next().value.type !== 'touch')) return;
       e.preventDefault();
-      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, type: e.pointerType });
+      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, type: e.pointerType, accX: 0, accY: 0, moved: 0 });
       canvas.setPointerCapture(e.pointerId);
       this.isDragging = true;
-      this.userOrbitTimer = 4.0;
     });
 
     canvas.addEventListener('pointermove', (e) => {
@@ -84,11 +83,20 @@ class CameraSystem {
         if (previousDistance > 1 && distance > 1) {
           this.zoomMultiplier = Math.max(0.45, Math.min(2.4, this.zoomMultiplier * previousDistance / distance));
         }
+        this.userOrbitTimer = 4.0;
       } else {
-        this.orbitYawOffset -= dx * 0.0065;
-        this.orbitPitchOffset = Math.max(-0.32, Math.min(0.68, this.orbitPitchOffset + dy * 0.005));
+        // A click (drawings, the drop log) stays a click. Orbit starts once the pointer has actually dragged.
+        pointer.accX += dx;
+        pointer.accY += dy;
+        pointer.moved += Math.hypot(dx, dy);
+        if (pointer.moved > 6) {
+          this.orbitYawOffset -= pointer.accX * 0.0065;
+          this.orbitPitchOffset = Math.max(-0.32, Math.min(0.68, this.orbitPitchOffset + pointer.accY * 0.005));
+          pointer.accX = 0;
+          pointer.accY = 0;
+          this.userOrbitTimer = 4.0;
+        }
       }
-      this.userOrbitTimer = 4.0;
     });
 
     const releasePointer = (id) => {
@@ -202,7 +210,9 @@ class CameraSystem {
       this.userOrbitTimer = Math.max(0, this.userOrbitTimer - dt);
     }
 
-    if (!this.isDragging && this.userOrbitTimer <= 0 && Math.abs(entity.speed) > 0.5) {
+    // The roach keeps a free orbit while it walks. Cars and the other bodies still ease back behind themselves.
+    const roachOrbit = entity.isRoach && this.controllerManager.activeMode === 'person';
+    if (!roachOrbit && !this.isDragging && this.userOrbitTimer <= 0 && Math.abs(entity.speed) > 0.5) {
       this.orbitYawOffset -= Math.round(this.orbitYawOffset / (Math.PI * 2)) * (Math.PI * 2);
       this.orbitYawOffset += (0.0 - this.orbitYawOffset) * (1 - Math.exp(-dt * 2.2));
     }

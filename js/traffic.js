@@ -1,5 +1,6 @@
 import * as THREE from 'three/webgpu';
 import { buildRoadNetwork } from './road-network.js';
+import { boxPush, circleGap, circleSwerve } from './drop-place.js';
 import { createPedestrianSystem } from './pedestrian-system.js';
 import { vehicleContact, resolveVehicleContact, sweptVehicleContact } from './vehicle-physics.js';
 import { signalPhase, walkSignal } from './city-config.js';
@@ -430,10 +431,12 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections) {
   // =========================================================================
   const player = { active: false, entity: null, x: 0, z: 0, vx: 0, vz: 0, fx: 0, fz: 1,
     halfW: 0.86, halfL: 2.18 };
+  // Grounded drawings. drops.js refills this; cars and pedestrians treat every entry as solid.
+  const dropObstacles = [];
   const nearEdges = [];
   const nearSignals = [];
   const pedestrianSystem = createPedestrianSystem(network, {
-    player, nearEdges, nearSignals, mayCross, walkOn, visible, nearView
+    player, nearEdges, nearSignals, mayCross, walkOn, visible, nearView, dropObstacles
   });
   group.add(...pedestrianSystem.meshes);
 
@@ -1108,6 +1111,22 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections) {
         v.leaderSpeed = v.pSpeed;
       }
     }
+    v.dropEvade = 0;
+    const dg = circleGap(v.x, v.z, v.yaw, v.half, v.halfWidth, dropObstacles);
+    if (dg < LOOKAHEAD) {
+      worst = Math.min(worst, brake(v, Math.max(dg, 0.15), 0, 1.4, 0.35));
+      if (dg < v.gap) {
+        v.gap = dg;
+        v.leaderSpeed = 0;
+      }
+      if (!v.panicUntil && dg < 22) {
+        const side = circleSwerve(v.x, v.z, v.yaw, v.halfWidth, dropObstacles);
+        if (side) {
+          const room = swerveRoom(v, side);
+          if (room > 0.3) v.dropEvade = side * Math.min(room, 1.8);
+        }
+      }
+    }
     const acc = Math.min(freeAcc(v) + worst, (cap - v.speed) * 2);
     v.acc = clamp(acc, -9, v.driver.a);
     // dodging the player: braking (as hard as it can, unless that would stop it before it has swerved out of the way),
@@ -1287,7 +1306,7 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections) {
     let bend = Math.atan2(bendB.dx, bendB.dz) - Math.atan2(bendA.dx, bendA.dz);
     bend -= Math.round(bend / (Math.PI * 2)) * Math.PI * 2;
     // ...plus how far right of its path it heads, and how far right of where it should be it is (nose and dl - evade)
-    const off = v.dl - (v.evade || 0);
+    const off = v.dl - (v.evade || 0) - (v.dropEvade || 0);
     const want = Math.atan((wheelbase * bend) / 2) + v.nose + Math.atan(((panic ? 3 : 1.2) * off) / (1 + v.speed));
     const lateral = panic ? v.driver.grip : 1.3 * v.driver.aLat; // the sideways acceleration it steers up to
     const most = Math.min(v.driver.lock, Math.atan((lateral * wheelbase) / Math.max(v.speed * v.speed, 1e-3)));
@@ -1945,6 +1964,7 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections) {
       drive(v, dt);
       locate(v);
       knock(v, dt);
+      rejectDrops(v);
       pose(v, dt);
     }
     if (player.active) {
@@ -2015,6 +2035,26 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections) {
     updateSparks(dt);
   }
 
+  // A drawing is a solid circle. Brake and swerve happen in accelerate; this pushes
+  // any body that still overlaps back onto the road, and steps it along the lane if the
+  // curb clamp will not let it slide clear.
+  function rejectDrops(v) {
+    if (!dropObstacles.length || !v.edge) return;
+    for (let guard = 0; guard < 24; guard++) {
+      const push = boxPush(v.x, v.z, v.yaw + (v.yawOffset || 0), v.halfL ?? v.half, v.halfWidth, dropObstacles);
+      if (!push.hit) return;
+      const beforeX = v.x;
+      const beforeZ = v.z;
+      shove(v, push.dx, push.dz);
+      v.speed = Math.min(v.speed, 0.3);
+      if (Math.hypot(v.x - beforeX, v.z - beforeZ) >= 0.04) continue;
+      if (v.conn) v.cs = Math.max(-v.half, v.cs - 1.5);
+      else v.s = Math.max(0, v.s - 1.5);
+      locate(v);
+      v.speed = 0;
+    }
+  }
+
   return {
     group,
     update,
@@ -2022,7 +2062,8 @@ function createTrafficSystem(scene, sidewalks, obstacles, signalIntersections) {
     cars,
     buses,
     peds: pedestrianSystem.peds,
-    network
+    network,
+    dropObstacles
   };
 }
 

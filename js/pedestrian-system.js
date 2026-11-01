@@ -1,4 +1,5 @@
 import { blockAt } from './city-config.js';
+import { circleOverlap, pathGap } from './drop-place.js';
 import { createPedestrianRoutes } from './pedestrian-routes.js';
 import { PersonCrowd, PersonRig, PEDESTRIAN_DIVE_DURATION } from './pedestrians.js';
 
@@ -11,7 +12,7 @@ const PED_SPAWN_DISTANCE = 150;
 const PED_AVOID_INTERVAL = 0.12;
 const clamp = (x, lo, hi) => Math.max(lo, Math.min(hi, x));
 
-function createPedestrianSystem(network, { player, nearEdges, nearSignals, mayCross, walkOn, visible, nearView }) {
+function createPedestrianSystem(network, { player, nearEdges, nearSignals, mayCross, walkOn, visible, nearView, dropObstacles = [] }) {
   let clock = 0;
   let focusX = 0, focusZ = 140;
   let hasView = false;
@@ -466,6 +467,26 @@ function createPedestrianSystem(network, { player, nearEdges, nearSignals, mayCr
       }
     }
     if (avoiding) room = Math.min(room, Math.max(0, (p.avoidT - p.t) * p.dir));
+    if (dropObstacles.length && !diving) {
+      const gap = pathGap(p.x, p.z, p.ux, p.uz, p.dir, 0.4, dropObstacles);
+      if (gap < room) room = gap;
+      if (gap > 6 && p._dropDodge) {
+        p.dodgeTarget = 0;
+        p._dropDodge = false;
+      } else if (gap < 3.5 && !p.dodgeTarget && !p.conversation) {
+        const left = pathGap(p.x + p.uz * 1.15, p.z - p.ux * 1.15, p.ux, p.uz, p.dir, 0.4, dropObstacles);
+        const right = pathGap(p.x - p.uz * 1.15, p.z + p.ux * 1.15, p.ux, p.uz, p.dir, 0.4, dropObstacles);
+        if (left > gap + 0.8 || right > gap + 0.8) {
+          p.dodgeTarget = left >= right ? 1.15 : -1.15;
+          p._dropDodge = true;
+        } else if (gap < 1.2 && !avoiding && !p.node && (!p._dropTurn || clock > p._dropTurn)) {
+          p._dropTurn = clock + 2.5;
+          turnPed(p, -p.dir);
+          p.pause = 0.35;
+          room = 0;
+        }
+      }
+    }
     vMax = Math.min(vMax, Math.sqrt(2 * brake * room));
     p.v += clamp(vMax - p.v, -(avoiding ? brake : 2 * brake) * dt, (avoiding ? PED_ESCAPE_ACCEL : PED_ACCEL) * dt);
     const movement = diving ? Math.min(Math.abs(p.diveT - p.t), PED_DODGE_SPEED * dt) : Math.min(p.v * dt, room);
@@ -504,6 +525,20 @@ function createPedestrianSystem(network, { player, nearEdges, nearSignals, mayCr
     p.dodge += clamp(p.dodgeTarget - p.dodge, -dodgeStep, dodgeStep);
     p.x = p.ax + p.ux * t + p.uz * p.dodge;
     p.z = p.az + p.uz * t - p.ux * p.dodge;
+    if (dropObstacles.length) {
+      for (let guard = 0; guard < 4; guard++) {
+        const hit = circleOverlap(p.x, p.z, 0.36, dropObstacles);
+        if (!hit) break;
+        const along = hit.nx * p.ux + hit.nz * p.uz;
+        const side = hit.nx * p.uz - hit.nz * p.ux;
+        const push = hit.depth + 0.05;
+        p.t = clamp(p.t + along * push, 0, p.len);
+        p.dodge += side * push;
+        p.v = 0;
+        p.x = p.ax + p.ux * p.t + p.uz * p.dodge;
+        p.z = p.az + p.uz * p.t - p.ux * p.dodge;
+      }
+    }
     if (p.node && ((t > KERB && t < p.len - KERB) || (p.waiting && walkOn(p.side)))) {
       p.coord = p.side >= 2 ? p.x : p.z;
       if (!p.node.walkers.length) walkedNodes.push(p.node);

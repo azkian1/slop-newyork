@@ -162,6 +162,43 @@ test('cancelling one pinch pointer leaves the other ready for orbit', () => {
   close(h.camera.orbitYawOffset, -0.065);
 });
 
+test('a short press does not orbit and a real drag does', () => {
+  const h = cameraHarness();
+  h.pointer(h.canvas, 'pointerdown', 1, 0, 0, 'mouse');
+  h.pointer(h.canvas, 'pointermove', 1, 4, 1, 'mouse');
+  close(h.camera.orbitYawOffset, 0);
+  close(h.camera.orbitPitchOffset, 0.09);
+  h.pointer(h.canvas, 'pointerup', 1, 4, 1, 'mouse');
+  assert.equal(h.camera.userOrbitTimer, 0);
+  h.pointer(h.canvas, 'pointerdown', 2, 0, 0, 'mouse');
+  h.pointer(h.canvas, 'pointermove', 2, 4, 0, 'mouse');
+  h.pointer(h.canvas, 'pointermove', 2, 14, 0, 'mouse');
+  close(h.camera.orbitYawOffset, -14 * 0.0065);
+  h.pointer(h.canvas, 'pointerup', 2, 14, 0, 'mouse');
+});
+
+test('a moving roach keeps the orbit a moving car releases', () => {
+  const car = cameraHarness();
+  car.pointer(car.canvas, 'pointerdown', 1, 0, 0, 'mouse');
+  car.pointer(car.canvas, 'pointermove', 1, 10, 0, 'mouse');
+  car.pointer(car.canvas, 'pointerup', 1, 10, 0, 'mouse');
+  car.entity.speed = 5;
+  for (let i = 0; i < 420; i++) car.camera.update(1 / 60, i / 60);
+  assert.ok(Math.abs(car.camera.orbitYawOffset) < 0.02);
+
+  const roach = cameraHarness({
+    position: new Vector3(0, 0, 100), heading: 0, speed: 5, type: 'person', isRoach: true,
+    chaseDistance: 0.3, chaseHeight: 0.12, cameraTargetOffset: new Vector3(0, 0.03, 0)
+  });
+  roach.camera.controllerManager.activeMode = 'person';
+  roach.pointer(roach.canvas, 'pointerdown', 1, 0, 0, 'mouse');
+  roach.pointer(roach.canvas, 'pointermove', 1, 10, 0, 'mouse');
+  roach.pointer(roach.canvas, 'pointerup', 1, 10, 0, 'mouse');
+  close(roach.camera.orbitYawOffset, -0.065);
+  for (let i = 0; i < 420; i++) roach.camera.update(1 / 60, i / 60);
+  close(roach.camera.orbitYawOffset, -0.065);
+});
+
 test('mouse orbit and wheel zoom retain their behavior and bounds', () => {
   const h = cameraHarness();
   h.pointer(h.canvas, 'pointerdown', 1, 0, 0, 'mouse', 2);

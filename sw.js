@@ -1,5 +1,5 @@
-const CACHE = 'slop-489e337874';
-const FILES = ["./dist/city-489e337874.js","./js/building-geodata.bin.gz","./js/tree-geodata.bin.gz","./css/style.css","./dist/part-5FHELVQX.js","./dist/part-APXUDIYS.js","./dist/part-HYZ3WC7W.js","./dist/part-JRTSHST3.js","./dist/part-O4WC5KQW.js","./dist/part-PH6WOWCI.js","./dist/part-RMIFO4CX.js","./dist/part-T65JIARU.js","./dist/part-XKQIZPQY.js"];
+const CACHE = 'slop-6bb210b6df';
+const FILES = ["./dist/city-6bb210b6df.js","./js/building-geodata.bin.gz","./js/tree-geodata.bin.gz","./dist/part-2HTL2EIG.js","./dist/part-5FHELVQX.js","./dist/part-APXUDIYS.js","./dist/part-FESS3OOB.js","./dist/part-HYZ3WC7W.js","./dist/part-O4WC5KQW.js","./dist/part-PH6WOWCI.js","./dist/part-RMIFO4CX.js","./dist/part-XKQIZPQY.js"];
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(FILES)).then(() => self.skipWaiting()));
 });
@@ -23,7 +23,10 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(fetch(event.request, { cache: 'no-store' }));
     return;
   }
-  const asset = url.pathname.includes('/dist/') || url.pathname.endsWith('.bin.gz') || url.pathname.endsWith('.css');
+  // Leave stylesheets to the network. The loader is inline, and a worker that is
+  // still starting must not hold the sheet that used to block the first paint.
+  if (url.pathname.endsWith('.css')) return;
+  const asset = url.pathname.includes('/dist/') || url.pathname.endsWith('.bin.gz');
   if (!asset) return;
   event.respondWith((async () => {
     const cache = await caches.open(CACHE);

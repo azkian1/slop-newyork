@@ -24,6 +24,26 @@ test('city module preloads start after the import map and before stylesheets', (
   assert.equal(imports.three, imports['three/webgpu'], 'Three.js aliases share one module instance');
 });
 
+test('the loading screen is inline and nothing in the head blocks the first paint', () => {
+  assert.match(html, /<html[^>]*style="[^"]*background:\s*#0c0d10/);
+  const style = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
+  assert.match(style, /#loading-overlay/);
+  assert.match(style, /background:\s*#0c0d10/);
+  assert.match(style, /@keyframes loader-sweep/);
+  const overlayAt = html.indexOf('id="loading-overlay"');
+  assert.ok(overlayAt > 0 && overlayAt < html.indexOf('id="canvas-container"'));
+  assert.match(html.slice(overlayAt, overlayAt + 600), /Loading\.\.\./);
+  const head = html.slice(html.indexOf('<head>'), html.indexOf('</head>'));
+  const withoutNoscript = head.replace(/<noscript>[\s\S]*?<\/noscript>/g, '');
+  for (const sheet of withoutNoscript.matchAll(/<link\b[^>]*>/g)) {
+    const tag = sheet[0];
+    if (!/rel="stylesheet"/.test(tag)) continue;
+    assert.match(tag, /media="print"/, tag);
+    assert.match(tag, /onload="this\.media='all'"/);
+  }
+  assert.equal([...withoutNoscript.matchAll(/<script\b(?![^>]*type="(?:module|importmap)")[^>]*>/g)].length, 0);
+});
+
 test('the page preloads the hashed city bundle and fetches building geodata up front', () => {
   const links = preloads.map((match) => match[1]);
   assert.ok(links.length >= 1);

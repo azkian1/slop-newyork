@@ -1,13 +1,36 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" style="background:#0c0d10;color-scheme:dark">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>Slop New York</title>
   <link rel="icon" href="data:," />
+  <!-- Painted before any script, bundle, font, or stylesheet. External CSS is not allowed to block this. -->
   <style>
-    html, body { margin: 0; background: #0c0d10; color: #f6f5f2; }
-    #loading-overlay { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; background: #0c0d10; color: #f6f5f2; font-family: sans-serif; }
+    html, body { margin: 0; background: #0c0d10; color: #f6f5f2; color-scheme: dark; }
+    #loading-overlay {
+      position: fixed; inset: 0; z-index: 100; display: grid; place-items: center;
+      background: radial-gradient(120% 90% at 50% 38%, #1b1e24 0%, #0c0d10 55%, #060607 100%);
+      color: #f6f5f2; font-family: sans-serif;
+    }
+    #loading-overlay .loader { display: flex; flex-direction: column; align-items: center; text-align: center; }
+    #loading-overlay .loader-bullet {
+      width: 56px; height: 56px; margin-bottom: 22px; border-radius: 50%;
+      display: inline-flex; align-items: center; justify-content: center;
+      background: #ffc21a; color: #17140a; font-weight: 800; font-size: 21px;
+    }
+    #loading-overlay .loader-title { font-size: 34px; font-weight: 650; letter-spacing: -0.03em; line-height: 1.1; }
+    #loading-overlay .loader-track {
+      position: relative; width: 240px; height: 3px; margin: 26px 0 14px;
+      border-radius: 3px; background: rgba(255, 255, 255, 0.1); overflow: hidden;
+    }
+    #loading-overlay .loader-fill {
+      position: absolute; left: 0; top: 0; bottom: 0; width: 35%; border-radius: inherit;
+      background: #ffc21a; transform: translateX(-100%);
+      animation: loader-sweep 1.5s cubic-bezier(0.45, 0, 0.25, 1) infinite;
+    }
+    #loading-status { font-size: 13px; color: rgba(246, 245, 242, 0.72); }
+    @keyframes loader-sweep { from { transform: translateX(-100%); } to { transform: translateX(290%); } }
   </style>
   <meta name="description" content="Photorealistic GTA-style 3D Slop New York simulation built with Three.js WebGPURenderer and TSL shaders featuring complete Manhattan street map (125th St to Battery Park), third-person navigation (Person, Car, Cyclist, Helicopter), and 11 cinematic cameras at 60 FPS." />
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
@@ -22,8 +45,8 @@
       }
     }
   </script>
-  <link rel="modulepreload" href="./dist/city-489e337874.js" />
-  <link rel="modulepreload" href="./dist/part-T65JIARU.js" />
+  <link rel="modulepreload" href="./dist/city-6bb210b6df.js" />
+  <link rel="modulepreload" href="./dist/part-2HTL2EIG.js" />
   <link rel="modulepreload" href="./dist/part-5FHELVQX.js" />
   <link rel="modulepreload" href="./dist/part-PH6WOWCI.js" />
   <link rel="modulepreload" href="./dist/part-HYZ3WC7W.js" />
@@ -34,14 +57,29 @@
       buildings: fetch(new URL('./js/building-geodata.bin.gz', import.meta.url))
     };
   </script>
-  <script type="module" src="./dist/city-489e337874.js"></script>
-  <!-- Inter (UI) & Overpass (street-name signs: modelled on Highway Gothic, the US road sign typeface) -->
+  <script type="module" src="./dist/city-6bb210b6df.js"></script>
+  <!-- Inter (UI) & Overpass (street-name signs: modelled on Highway Gothic, the US road sign typeface).
+       media=print keeps these off the first paint. The loader above is already on screen. -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..800&amp;family=Overpass:wght@600;700&amp;display=swap" />
-  <link rel="stylesheet" href="./css/style.css?v=20261022-repo-link" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..800&amp;family=Overpass:wght@600;700&amp;display=swap" media="print" onload="this.media='all'" />
+  <link rel="stylesheet" href="./css/style.css?v=20261022-repo-link" media="print" onload="this.media='all'" />
+  <noscript>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..800&amp;family=Overpass:wght@600;700&amp;display=swap" />
+    <link rel="stylesheet" href="./css/style.css?v=20261022-repo-link" />
+  </noscript>
 </head>
 <body>
+  <!-- Loading screen is the first body node so it can paint before the rest of the document. -->
+  <div id="loading-overlay" role="status" aria-live="polite">
+    <div class="loader">
+      <span class="mta-bullet loader-bullet" aria-hidden="true">NY</span>
+      <div class="loader-title">Slop New York</div>
+      <div class="loader-track is-indeterminate" aria-hidden="true"><span id="loading-progress" class="loader-fill"></span></div>
+      <div id="loading-status">Loading...</div>
+    </div>
+  </div>
+
   <!-- Icon sprite (24 × 24 stroke icons, drawn in currentColor) -->
   <svg class="icon-sprite" width="0" height="0" aria-hidden="true" focusable="false">
     <defs>
@@ -71,16 +109,6 @@
       <symbol id="i-close" viewBox="0 0 24 24"><path d="m6.5 6.5 11 11M17.5 6.5l-11 11"/></symbol>
     </defs>
   </svg>
-
-  <!-- Loading Screen -->
-  <div id="loading-overlay" role="status" aria-live="polite">
-    <div class="loader">
-      <span class="mta-bullet loader-bullet" aria-hidden="true">NY</span>
-      <div class="loader-title">Slop New York</div>
-      <div class="loader-track is-indeterminate" aria-hidden="true"><span id="loading-progress" class="loader-fill"></span></div>
-      <div id="loading-status">Loading city code and data...</div>
-    </div>
-  </div>
 
   <!-- 3D WebGPU Viewport Container -->
   <main id="canvas-container" aria-label="3D Interactive Slop New York Viewport"></main>
