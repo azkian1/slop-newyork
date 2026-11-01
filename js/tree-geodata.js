@@ -2,7 +2,8 @@
 // NYC Parks Forestry Tree Points: https://data.cityofnewyork.us/resource/hn5i-inap.json
 // Snapshot SHA-256: e659b1f75bf76a5f3e0ad8825e24fc01e5d48e61396ffb1328e25d330b4dc613
 // 70,680 unique living tree locations, quantized to 0.5 m.
-const response = await fetch(new URL('./tree-geodata.bin.gz', import.meta.url));
+const treeBinUrl = new URL('../js/tree-geodata.bin.gz', import.meta.url);
+const response = await (globalThis.__slopGeo && globalThis.__slopGeo.trees || fetch(treeBinUrl));
 if (!response.ok) throw new Error(`Tree data request failed: ${response.status}`);
 // Servers that send .gz files as Content-Encoding: gzip hand over bytes the browser has already inflated
 const body = new Uint8Array(await response.arrayBuffer());

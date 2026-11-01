@@ -232,6 +232,11 @@ class ThirdPersonControllerManager {
     this.bindKeyboard();
   }
 
+  addColliders(extra) {
+    for (const c of extra) this.colliders.push(c);
+    this._colliderCells = null;
+  }
+
   setCollisionListener(listener) {
     this._collisionListener = typeof listener === 'function' ? listener : null;
     this._collisionEvent ??= { a: null, b: null, kind: '', x: 0, y: 0, z: 0, nx: 0, ny: 0, nz: 0, speed: 0 };

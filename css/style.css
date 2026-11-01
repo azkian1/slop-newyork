@@ -1431,6 +1431,65 @@ body.touch-enabled .pop-item { min-height: 44px; }
   #touch-controls { bottom: max(var(--edge), env(safe-area-inset-bottom)); }
 }
 
+.drop-log {
+  position: fixed;
+  z-index: 30;
+  top: 76px;
+  right: 16px;
+  width: 260px;
+  max-height: calc(100vh - 320px);
+  display: flex;
+  flex-direction: column;
+  color: #fff;
+  background: rgba(12, 14, 18, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  overflow: hidden;
+  pointer-events: auto;
+  font: 600 13px/1.3 system-ui, sans-serif;
+}
+.drop-log-toggle {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: #fff;
+  text-align: left;
+  padding: 8px 12px;
+  font: inherit;
+  cursor: pointer;
+}
+.drop-log-list {
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+}
+.drop-log.is-closed .drop-log-list { display: none; }
+.drop-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  border: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+.drop-row img {
+  width: 64px;
+  height: 48px;
+  object-fit: contain;
+  background: rgba(255, 255, 255, 0.06);
+  image-rendering: pixelated;
+  flex: none;
+}
+.drop-row-text { display: flex; flex-direction: column; min-width: 0; }
+.drop-row-text strong { font-weight: 700; }
+.drop-row-text em { font-style: normal; color: #ff4ad8; font-size: 12px; }
+body.matrix-mode .drop-log { border-color: #1f8f3a; }
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

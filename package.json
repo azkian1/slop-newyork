@@ -1,0 +1,9 @@
+{
+  "private": true,
+  "scripts": {
+    "build": "node tools/build-pages.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.0"
+  }
+}

@@ -166,7 +166,34 @@ class CameraSystem {
     this.camera.updateProjectionMatrix();
   }
 
+  focusOn(x, y, z) {
+    const dist = Math.max(8, y * 0.8 + 6);
+    this._focus = {
+      fromPos: this.currentPos.clone(),
+      fromLook: this.currentLookAt.clone(),
+      toPos: new THREE.Vector3(x + dist * 0.45, y + dist * 0.28, z + dist),
+      toLook: new THREE.Vector3(x, y, z),
+      t: 0,
+      hold: 0
+    };
+  }
+
   update(dt, elapsed) {
+    if (this._focus) {
+      const f = this._focus;
+      f.t = Math.min(1, f.t + dt / 1.3);
+      const k = 1 - (1 - f.t) ** 3;
+      this.currentPos.lerpVectors(f.fromPos, f.toPos, k);
+      this.currentLookAt.lerpVectors(f.fromLook, f.toLook, k);
+      this.camera.position.copy(this.currentPos);
+      this.camera.lookAt(this.currentLookAt);
+      if (f.t >= 1) f.hold += dt;
+      if (f.hold > 6) {
+        this._focus = null;
+        this.followEntity = null;
+      }
+      return;
+    }
     const entity = this.controllerManager.getActiveEntity();
     const desiredPos = this._desiredPos;
     const desiredLook = this._desiredLook;

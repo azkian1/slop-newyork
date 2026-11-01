@@ -2,7 +2,8 @@
 // NYC OTI Building Footprints: https://data.cityofnewyork.us/resource/5zhs-2jue.json
 // Snapshot SHA-256: 796136eb448bce005604b88062ab95c21a4cefeb34b53eba2ad47e3ab41b5853
 // 37,353 buildings. Coordinates: 0.5 m; roof heights: 1 m; construction years: decades (0 unknown).
-const response = await fetch(new URL('./building-geodata.bin.gz', import.meta.url));
+const buildingBinUrl = new URL('../js/building-geodata.bin.gz', import.meta.url);
+const response = await (globalThis.__slopGeo && globalThis.__slopGeo.buildings || fetch(buildingBinUrl));
 if (!response.ok) throw new Error(`Building data request failed: ${response.status}`);
 // Servers that send .gz files as Content-Encoding: gzip hand over bytes the browser has already inflated
 const body = new Uint8Array(await response.arrayBuffer());

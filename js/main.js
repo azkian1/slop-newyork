@@ -5,7 +5,6 @@ import { createPostProcessing } from './post-processing.js';
 import { ClusteredLighting } from 'three/addons/lighting/ClusteredLighting.js';
 import { getLocationLabel, isTypingInField, ROADS, NYC_LANDMARKS, TELEPORT_LOCATIONS } from './city-config.js';
 import { buildCityGrid } from './city-grid.js';
-import { buildBoroughs } from './boroughs.js';
 import { buildLandmarks } from './landmarks.js';
 import { buildCityBlocks } from './buildings.js';
 import { buildStreetDetails } from './street-details.js';
@@ -18,9 +17,12 @@ import { CameraSystem, CAMERA_PRESETS } from './cameras.js';
 import { LightingSystem } from './lighting.js';
 import { NYCMapSystem } from './nyc-map.js';
 import { setupSceneCulling, updateSceneCulling } from './scene-culling.js';
-import { CityAudioSystem } from './audio-system.js';
 import { createCockroach } from './cockroach.js';
-import { createMatrixMode, matrixFromSearch } from './matrix-mode.js';
+
+function matrixFromSearch(search) {
+  const query = String(search || '').replace(/^\?/, '');
+  return new URLSearchParams(query).get('matrix') === '1';
+}
 
 // Application setup, shader warm-up and frame loop.
 
@@ -88,16 +90,14 @@ async function initApp() {
   await showLoadingStage('Building streets, parks and waterfronts...');
   const cityGrid = buildCityGrid(scene);
   markInit('cityGrid');
-  await showLoadingStage('Building bridges and surrounding boroughs...');
-  const boroughs = buildBoroughs(scene, { sidewalks: cityGrid.sidewalks });
-  markInit('boroughs');
+  let boroughs = { colliders: [], update() {} };
   await showLoadingStage('Building landmarks...');
   const { colliders: landmarkColliders } = buildLandmarks(scene);
   markInit('landmarks');
   await showLoadingStage('Generating building footprints and facades...');
   const cityBlocks = buildCityBlocks(scene, landmarkColliders);
   markInit('blocks');
-  const allColliders = [...landmarkColliders, ...cityBlocks.colliders, ...boroughs.colliders, ...(cityGrid.colliders || [])];
+  const allColliders = [...landmarkColliders, ...cityBlocks.colliders, ...(cityGrid.colliders || [])];
 
   await showLoadingStage('Placing trees, streetlights and street furniture...');
   const streetDetails = buildStreetDetails(scene, allColliders);
@@ -150,9 +150,15 @@ async function initApp() {
   window.__ts = trafficSystem;
   const touchControls = new TouchControls(controllerManager);
   const soundButton = document.getElementById('btn-sound');
-  const audioSystem = new CityAudioSystem({ controllerManager, trafficSystem, highwayTraffic, streetDetails }, {
-    onStateChange: updateSoundButton
-  });
+  let audioSystem = {
+    supported: false,
+    enabled: false,
+    ready: false,
+    setEnabled() {},
+    update() {},
+    dispose() {},
+    honk() {}
+  };
   roach.attachAudio(audioSystem);
   function updateSoundButton() {
     if (!soundButton) return;
@@ -248,9 +254,19 @@ async function initApp() {
   // Roughness mip blur must not spread reflections back onto matte or nonreflective surfaces.
   const reflectionMask = scenePassMetalRough.r.greaterThan(0).select(smoothstep(maxSSRRoughness, 0.55, scenePassMetalRough.g), 0);
   const reflections = ssrPass.mul(reflectionMask);
-  const matrixMode = createMatrixMode();
+  let matrixMode = { setEnabled() {} };
+  let matrixLoading = null;
   const colorGrade = createPostProcessing(renderer, scenePassColor, reflections);
   let matrixEnabled = matrixFromSearch(location.search);
+  const ensureMatrix = () => {
+    if (!matrixLoading) {
+      matrixLoading = import('./matrix-mode.js').then((mod) => {
+        matrixMode = mod.createMatrixMode();
+        return matrixMode;
+      });
+    }
+    return matrixLoading;
+  };
   const applyMatrix = (on) => {
     matrixEnabled = on;
     matrixMode.setEnabled(scene, lightingSystem.sky, renderer, on);
@@ -258,7 +274,6 @@ async function initApp() {
     ssrPass.intensity.value = on ? 0 : 0.50;
     document.body.classList.toggle('matrix-mode', on);
   };
-  applyMatrix(matrixEnabled);
   // Still frames for headless checks (?matrix=1&shot=1). Not used by the live toggle.
   if (new URLSearchParams(location.search).get('shot') === '1') {
     window.__aim = (x, y, z, lx, ly, lz) => {
@@ -592,7 +607,7 @@ async function initApp() {
         break;
       case 'KeyM':
         if (!e.repeat && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && !mapSystem.isFullMapOpen) {
-          applyMatrix(!matrixEnabled);
+          ensureMatrix().then(() => applyMatrix(!matrixEnabled));
         }
         break;
       case 'KeyN':
@@ -714,6 +729,51 @@ async function initApp() {
 
   if (elFps) elFps.textContent = '60';
 
+  let drops = null;
+  const useStorageInstances = (root) => {
+    if (!renderer.backend.isWebGPUBackend || !root) return;
+    root.traverse((object) => {
+      if (object.isInstancedMesh && object.instanceMatrix && !object.instanceMatrix.isStorageInstancedBufferAttribute) {
+        object.instanceMatrix = new THREE.StorageInstancedBufferAttribute(object.instanceMatrix.array, 16);
+      }
+    });
+  };
+  function startAfterFirstFrame() {
+    import('./audio-system.js').then(({ CityAudioSystem }) => {
+      audioSystem = new CityAudioSystem({ controllerManager, trafficSystem, highwayTraffic, streetDetails }, {
+        onStateChange: updateSoundButton
+      });
+      audioSystem.ready = true;
+      roach.attachAudio(audioSystem);
+      updateSoundButton();
+    }).catch((error) => console.warn('[audio]', error));
+
+    import('./boroughs.js').then(({ buildBoroughs }) => {
+      boroughs = buildBoroughs(scene, { sidewalks: cityGrid.sidewalks });
+      controllerManager.addColliders(boroughs.colliders || []);
+      const root = scene.getObjectByName('Boroughs');
+      if (root) {
+        root.updateMatrixWorld(true);
+        useStorageInstances(root);
+        setupSceneCulling(scene, [root], lightingSystem.sunLight.shadow);
+      }
+    }).catch((error) => console.warn('[boroughs]', error));
+
+    if (streetDetails.addSurveyedTrees) {
+      streetDetails.addSurveyedTrees().then((treeRoot) => {
+        if (treeRoot) treeRoot.updateMatrixWorld(true);
+        useStorageInstances(streetDetails.group);
+      }).catch((error) => console.warn('[trees]', error));
+    }
+
+    import('./drops.js').then(({ createDrops }) => createDrops({
+      scene, cameraSystem, controllerManager
+    }).then((system) => { drops = system; })).catch((error) => console.warn('[drops]', error));
+
+    if (matrixEnabled) ensureMatrix().then(() => applyMatrix(true));
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(() => {});
+  }
+
   renderer.setAnimationLoop((now) => {
     // Frame stepping for scripted recordings: window.__roachHold = true, then bump window.__roachStep
     if (window.__roachHold && warmedUp) {
@@ -746,6 +806,7 @@ async function initApp() {
       nextPlayerSave = now + 5000;
     }
     if (boroughs.update) boroughs.update(elapsed); // Roosevelt Island Tramway cabins
+    if (drops) drops.update(dt, cameraSystem.camera);
     cityBlocks.update(cameraSystem.currentPos.x, cameraSystem.currentPos.z);
     if (cityBlocks.updateLights) cityBlocks.updateLights(cameraSystem.camera);
     if (streetDetails.update) streetDetails.update(cameraSystem.camera);
@@ -791,6 +852,7 @@ async function initApp() {
         if (loadingOverlay) loadingOverlay.classList.add('hidden');
         audioSystem.ready = true;
         setLoadingProgress(1);
+        startAfterFirstFrame();
       });
     }
 

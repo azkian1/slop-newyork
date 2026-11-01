@@ -747,6 +747,7 @@ function createCockroach({ scene, controllerManager: cm, trafficSystem, cameraSy
   const camPos = new THREE.Vector3(), camLook = new THREE.Vector3(), want = new THREE.Vector3(), wantLook = new THREE.Vector3();
   let camInit = false;
   function updateCamera(dt) {
+    if (cameraSystem._focus) return;
     if (cm.activeMode !== 'person' || cameraSystem.getActivePreset().category !== 'follow') return;
     const hx = Math.sin(p.heading), hz = Math.cos(p.heading);
     const pos = st.mode === 'dead' ? splat.position : p.position;

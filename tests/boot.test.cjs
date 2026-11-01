@@ -24,21 +24,15 @@ test('city module preloads start after the import map and before stylesheets', (
   assert.equal(imports.three, imports['three/webgpu'], 'Three.js aliases share one module instance');
 });
 
-test('native module entry and imports share canonical preloaded URLs on GitHub Pages', () => {
+test('the page preloads the hashed city bundle and fetches building geodata up front', () => {
   const links = preloads.map((match) => match[1]);
-  assert.equal(new Set(links).size, links.length, 'each module is preloaded once');
+  assert.ok(links.length >= 1);
+  for (const href of links) assert.match(href, /^\.\/dist\/(?:city-[a-f0-9]+|part-[A-Za-z0-9]+)\.js$/);
   assert.equal(entries.length, 1);
-  assert.equal(entries[0][1], './js/main.js');
+  assert.match(entries[0][1], /^\.\/dist\/city-[a-f0-9]+\.js$/);
   assert.ok(links.includes(entries[0][1]));
-  assert.equal([...html.matchAll(/<script\b/g)].length, 2, 'only the import map and native entry are needed');
-  const base = 'https://example.test/slop-newyork/';
-  const urls = new Set(links.map((src) => new URL(src, base).href));
-  for (const src of links) {
-    assert.match(src, /^\.\/js\/[\w-]+\.js$/, 'preloads use the same unversioned paths as native imports');
-    const source = readFileSync(join(__dirname, '..', src), 'utf8');
-    for (const [, specifier] of source.matchAll(/(?:\bfrom\s*|\bimport\s*)['"](\.[^'"]+)['"]/g)) {
-      const url = new URL(specifier, new URL(src, base));
-      assert.ok(urls.has(url.href), `${src} imports an unpreloaded or mismatched URL: ${specifier}`);
-    }
-  }
+  assert.match(html, /__slopGeo/);
+  assert.match(html, /building-geodata\.bin\.gz" as="fetch"/);
+  const scripts = [...html.matchAll(/<script\b/g)];
+  assert.equal(scripts.length, 3, 'import map, geodata kickoff, and the bundle');
 });

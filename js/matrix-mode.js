@@ -269,6 +269,7 @@ export function createMatrixMode() {
       clearAlpha = renderer.getClearAlpha ? renderer.getClearAlpha() : 1;
       if (renderer.setClearColor) renderer.setClearColor(0x000000, 1);
       scene.traverse((obj) => {
+        if (obj.userData && obj.userData.drop) return;
         if (obj === sky) {
           saved.set(obj, { visible: obj.visible });
           obj.visible = false;

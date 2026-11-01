@@ -16,7 +16,6 @@ import {
 } from './city-config.js';
 import { cityUniforms, createSteamMaterial, createTreeGrateMaterial, createGodRayMaterial } from './tsl-materials.js';
 import { createTreeField } from './trees.js';
-import { REAL_TREES } from './tree-geodata.js';
 import { placeStreetTrees } from './tree-placements.js';
 import { createSubwayEntranceParts, createFoodCartParts } from './street-props.js';
 import { createSubwayEntrances } from './subway-entrances.js';
@@ -930,61 +929,64 @@ function buildStreetDetails(scene, colliders = []) {
   // B5. The squares, the other parks & the plazas (sites laid out by city-grid.js)
   for (const s of parkTreeSites || []) treePositions.push(s);
 
-  // Surveyed street trees; parks keep their authored terrain, clearings and tree layouts.
-  let sidewalkTreePositions = placeStreetTrees(REAL_TREES, treePositions,
-    (x, z) => !inPlaza(x, z, 1.5) && isClearOfPoles(x, z, 2.2));
-  for (const tree of sidewalkTreePositions) treePositions.push(tree);
+  // Park and plaza trees are in the first frame. The surveyed street trees (and their pits) are a
+  // separate mesh added after that frame, so the 70k-tree file does not block the first picture.
   const treeField = createTreeField(scene, treePositions, [...colliders, ...subwayColliders]);
   group.add(treeField.group);
-  sidewalkTreePositions = sidewalkTreePositions.filter((t) => treeField.sites.has(t));
-  console.info(`[streetDetails] ${treeField.stats.trees} trees (${sidewalkTreePositions.length} street trees)`);
+  console.info(`[streetDetails] ${treeField.stats.trees} park and plaza trees before street trees`);
 
-  const grateMat = createTreeGrateMaterial();
-  const pitCurbMat = new THREE.MeshStandardNodeMaterial({ color: 0x484642, roughness: 0.88 });
-  const pitSoilMat = new THREE.MeshStandardNodeMaterial({ color: 0x241c14, roughness: 0.96 });
+  async function addSurveyedTrees() {
+    const { REAL_TREES } = await import('./tree-geodata.js');
+    let sidewalkTreePositions = placeStreetTrees(REAL_TREES, treePositions,
+      (x, z) => !inPlaza(x, z, 1.5) && isClearOfPoles(x, z, 2.2));
+    const streetField = createTreeField(scene, sidewalkTreePositions, [...colliders, ...subwayColliders]);
+    group.add(streetField.group);
+    sidewalkTreePositions = sidewalkTreePositions.filter((t) => streetField.sites.has(t));
+    console.info(`[streetDetails] ${streetField.stats.trees} street trees`);
 
-  // Curbside tree pit surrounds & dark soil beds, with concentric cast-iron grates on the Midtown avenues
-  // (pits run along the curb: t.pitRot = PI/2 on cross streets)
-  const pitCurbGeo = new THREE.BoxGeometry(1.7, 0.22, 2.6);
-  const pitSoilGeo = new THREE.BoxGeometry(1.35, 0.23, 2.25);
-  const pitGrateGeo = new THREE.RingGeometry(0.24, 0.82, 12, 1).rotateX(-Math.PI / 2);
-  const gratedTrees = sidewalkTreePositions.filter((t) => t.grate !== false);
-
-  const pitCurbInst = new THREE.InstancedMesh(pitCurbGeo, pitCurbMat, sidewalkTreePositions.length);
-  const pitSoilInst = new THREE.InstancedMesh(pitSoilGeo, pitSoilMat, sidewalkTreePositions.length);
-  const pitGrateInst = new THREE.InstancedMesh(pitGrateGeo, grateMat, Math.max(1, gratedTrees.length));
-  pitCurbInst.receiveShadow = true;
-  pitSoilInst.receiveShadow = true;
-  pitGrateInst.receiveShadow = true;
-  pitGrateInst.count = gratedTrees.length;
-
-  sidewalkTreePositions.forEach((t, i) => {
-    dummy.rotation.set(0, t.pitRot || 0, 0);
-    dummy.scale.set(t.pitS || 1, 1, 1);
-    dummy.position.set(t.x, 0.19, t.z);
-    dummy.updateMatrix();
-    pitCurbInst.setMatrixAt(i, dummy.matrix);
-
-    dummy.position.set(t.x, 0.20, t.z);
-    dummy.updateMatrix();
-    pitSoilInst.setMatrixAt(i, dummy.matrix);
-  });
-  gratedTrees.forEach((t, i) => {
-    dummy.rotation.set(0, 0, 0);
-    dummy.position.set(t.x, 0.225, t.z);
-    dummy.updateMatrix();
-    pitGrateInst.setMatrixAt(i, dummy.matrix);
-  });
-  pitCurbInst.instanceMatrix.needsUpdate = true;
-  pitSoilInst.instanceMatrix.needsUpdate = true;
-  pitGrateInst.instanceMatrix.needsUpdate = true;
-  // Their footprint would keep these 20 cm boxes drawn at any distance (scene-culling.js): culled with the cross-street
-  // trees over them instead (trees.js MAX_DIST)
-  for (const pit of [pitCurbInst, pitSoilInst, pitGrateInst]) {
-    pit.computeBoundingSphere();
-    pit.userData.cullDistance = 950;
+    const grateMat = createTreeGrateMaterial();
+    const pitCurbMat = new THREE.MeshStandardNodeMaterial({ color: 0x484642, roughness: 0.88 });
+    const pitSoilMat = new THREE.MeshStandardNodeMaterial({ color: 0x241c14, roughness: 0.96 });
+    const pitCurbGeo = new THREE.BoxGeometry(1.7, 0.22, 2.6);
+    const pitSoilGeo = new THREE.BoxGeometry(1.35, 0.23, 2.25);
+    const pitGrateGeo = new THREE.RingGeometry(0.24, 0.82, 12, 1).rotateX(-Math.PI / 2);
+    const gratedTrees = sidewalkTreePositions.filter((t) => t.grate !== false);
+    const pitCurbInst = new THREE.InstancedMesh(pitCurbGeo, pitCurbMat, Math.max(1, sidewalkTreePositions.length));
+    const pitSoilInst = new THREE.InstancedMesh(pitSoilGeo, pitSoilMat, Math.max(1, sidewalkTreePositions.length));
+    const pitGrateInst = new THREE.InstancedMesh(pitGrateGeo, grateMat, Math.max(1, gratedTrees.length));
+    pitCurbInst.count = sidewalkTreePositions.length;
+    pitSoilInst.count = sidewalkTreePositions.length;
+    pitCurbInst.receiveShadow = true;
+    pitSoilInst.receiveShadow = true;
+    pitGrateInst.receiveShadow = true;
+    pitGrateInst.count = gratedTrees.length;
+    sidewalkTreePositions.forEach((t, i) => {
+      dummy.rotation.set(0, t.pitRot || 0, 0);
+      dummy.scale.set(t.pitS || 1, 1, 1);
+      dummy.position.set(t.x, 0.19, t.z);
+      dummy.updateMatrix();
+      pitCurbInst.setMatrixAt(i, dummy.matrix);
+      dummy.position.set(t.x, 0.20, t.z);
+      dummy.updateMatrix();
+      pitSoilInst.setMatrixAt(i, dummy.matrix);
+    });
+    gratedTrees.forEach((t, i) => {
+      dummy.rotation.set(0, 0, 0);
+      dummy.position.set(t.x, 0.225, t.z);
+      dummy.updateMatrix();
+      pitGrateInst.setMatrixAt(i, dummy.matrix);
+    });
+    pitCurbInst.instanceMatrix.needsUpdate = true;
+    pitSoilInst.instanceMatrix.needsUpdate = true;
+    pitGrateInst.instanceMatrix.needsUpdate = true;
+    for (const pit of [pitCurbInst, pitSoilInst, pitGrateInst]) {
+      pit.computeBoundingSphere();
+      pit.userData.cullDistance = 950;
+    }
+    group.add(pitCurbInst, pitSoilInst, pitGrateInst);
+    streetField.group.updateMatrixWorld(true);
+    return streetField.group;
   }
-  group.add(pitCurbInst, pitSoilInst, pitGrateInst);
 
   function hashPos(x, y, z) {
     const s = Math.sin(x * 127.1 + y * 311.7 + z * 74.7) * 43758.5453;
@@ -1131,7 +1133,7 @@ function buildStreetDetails(scene, colliders = []) {
   }
 
   scene.add(group);
-  return { group, footprints, signalClock, signalIntersections, audioSignals, treeField, update };
+  return { group, footprints, signalClock, signalIntersections, audioSignals, treeField, update, addSurveyedTrees };
 }
 
 export { buildStreetDetails };

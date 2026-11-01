@@ -1,0 +1,58 @@
+const assert = require('node:assert/strict');
+const { readFileSync } = require('node:fs');
+const { join } = require('node:path');
+const test = require('node:test');
+const { loadModule } = require('./helpers/module.cjs');
+
+const root = join(__dirname, '..');
+
+function load(file, imports = {}) {
+  const source = readFileSync(join(root, file), 'utf8');
+  return loadModule(source, { imports });
+}
+
+const size = load('js/drop-size.js');
+const { resolveDropHeight, MAX_DROP_HEIGHT, OBJECT_HEIGHTS, SIZE_CLASSES } = size;
+const { landingFor } = load('js/drop-place.js', { './drop-rng.js': load('js/drop-rng.js') });
+const { validateDrop } = load('js/drop-schema.js', { './drop-size.js': size });
+
+test('drop heights follow the dictionary, modifiers, and the 300 m cap', () => {
+  assert.equal(resolveDropHeight({ name: 'cat' }), OBJECT_HEIGHTS.cat);
+  assert.equal(resolveDropHeight({ name: 'grand piano' }), 1.5);
+  assert.equal(resolveDropHeight({ name: 'tank' }), 7);
+  assert.equal(resolveDropHeight({ name: 'whale' }), 25);
+  assert.equal(resolveDropHeight({ name: 'snowman', request: 'a 4 meter snowman' }), 4);
+  assert.equal(resolveDropHeight({ name: 'cat', request: 'a giant cat' }), 3.2);
+  assert.equal(resolveDropHeight({ name: 'car', request: 'a tiny car' }), 4.5 * 0.25);
+  assert.equal(resolveDropHeight({ name: 'widget', request: 'a house-sized widget' }), SIZE_CLASSES.house);
+  assert.equal(resolveDropHeight({ name: 'mystery' }), SIZE_CLASSES.human);
+  assert.equal(resolveDropHeight({ name: 'whale', request: 'a 900 meter whale' }), MAX_DROP_HEIGHT);
+  assert.equal(resolveDropHeight({ height: 12 }), 12);
+});
+
+test('landing spots are stable and inside the midtown grid', () => {
+  const a = landingFor('demo-tank');
+  const b = landingFor('demo-tank');
+  assert.deepEqual(a, b);
+  assert.notDeepEqual(landingFor('demo-piano'), a);
+  assert.ok(a.x > -900 && a.x < 1400);
+  assert.ok(a.z > -1400 && a.z < 2000);
+  assert.ok(['street', 'sidewalk', 'roof'].includes(a.surface));
+});
+
+test('the four demo drops are valid and unique', () => {
+  const rows = JSON.parse(readFileSync(join(root, 'data/drops.json'), 'utf8'));
+  assert.equal(rows.length, 4);
+  const sources = new Set(rows.map((row) => row.sourceId));
+  assert.equal(sources.size, 4);
+  for (const row of rows) {
+    assert.equal(validateDrop(row).join(';'), '');
+    assert.ok(!/[\u0400-\u04FF]/.test(JSON.stringify(row)));
+  }
+  const byId = Object.fromEntries(rows.map((row) => [row.sourceId, row]));
+  assert.equal(byId['demo-piano'].author, 'azaticus');
+  assert.equal(byId['demo-piano'].height, 1.5);
+  assert.equal(byId['demo-snowman'].height, 4);
+  assert.equal(byId['demo-tank'].height, 7);
+  assert.equal(byId['demo-horse'].author, 'horsefan');
+});
