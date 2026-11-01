@@ -7,6 +7,7 @@ import { paintDrop } from './drop-paint.js';
 import { buildingContact } from './controllers.js';
 import { makeBot } from './grok-bot.js';
 import { chooseStand, ejectCircle } from './drop-place.js';
+import { CARD_MAX_EDGE, worldCardSize } from './drop-size.js';
 import { DROPS_FETCH_TIMEOUT_MS, DROPS_POLL_MS, DROPS_REMOTE_URL, pollDue } from './drops-config.js';
 import {
   acceptLocalRecords,
@@ -51,23 +52,29 @@ function groundY(cm, drop) {
   return cm.getGroundHeight(drop.x, drop.z, 'person');
 }
 
+const CARD_GEOMETRY = new THREE.PlaneGeometry(1, 1);
+const BUILD_NEAR = 120;
+const BUILD_FAR = 180;
+const LABEL_NEAR = 32;
+const OBSTACLE_NEAR = 420;
+
 function makeCard(drop) {
-  const painted = paintDrop(drop.spec, drop.author, drop.id);
+  const painted = paintDrop(drop.spec, drop.author, drop.id, CARD_MAX_EDGE);
   const tex = new THREE.CanvasTexture(painted.canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.magFilter = THREE.NearestFilter;
   tex.minFilter = THREE.NearestFilter;
   tex.generateMipmaps = false;
-  const worldH = drop.height * (painted.canvas.height / painted.objectPx);
-  const worldW = worldH * (painted.canvas.width / painted.canvas.height);
+  const size = worldCardSize(drop.height, drop.spec, CARD_MAX_EDGE);
   const mesh = new THREE.Mesh(
-    new THREE.PlaneGeometry(worldW, worldH),
+    CARD_GEOMETRY,
     new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, side: THREE.DoubleSide })
   );
   mesh.name = 'DropCard';
   mesh.userData.drop = true;
   mesh.renderOrder = 2;
-  return { mesh, tex, painted, worldH, worldW };
+  mesh.scale.set(size.worldW, size.worldH, 1);
+  return { mesh, tex, painted, worldH: size.worldH, worldW: size.worldW };
 }
 
 export async function createDrops({ scene, cameraSystem, controllerManager, mapSystem, renderer, network, obstacles }) {
@@ -154,46 +161,78 @@ export async function createDrops({ scene, cameraSystem, controllerManager, mapS
     else cm.teleportActiveTo(spot.x, spot.z, spot.heading);
   }
   let overlay = null;
+  const rowQueue = [];
+  let rowCursor = 0;
+  function ensureCard(actor) {
+    if (actor.mesh) return;
+    const card = makeCard(actor.drop);
+    actor.mesh = card.mesh;
+    actor.tex = card.tex;
+    actor.painted = card.painted;
+    actor.worldH = card.worldH;
+    actor.worldW = card.worldW;
+    actor.radius = Math.max(0.55, Math.min(card.worldW * 0.5, 4));
+    card.mesh.position.set(actor.x, actor.y + card.worldH * 0.5, actor.z);
+    card.mesh.visible = !actor.pending;
+    group.add(card.mesh);
+    if (actor.img && card.painted) actor.img.src = card.painted.thumb.toDataURL();
+  }
+  function releaseCard(actor) {
+    if (!actor.mesh || actor.falling || actor.pending) return;
+    group.remove(actor.mesh);
+    actor.mesh.material.map = null;
+    actor.mesh.material.dispose();
+    if (actor.tex) actor.tex.dispose();
+    actor.mesh = null;
+    actor.tex = null;
+    actor.painted = null;
+  }
   function addActor(drop, { prepend = false } = {}) {
-    const card = makeCard(drop);
+    const size = worldCardSize(drop.height, drop.spec, CARD_MAX_EDGE);
     const y0 = groundY(cm, drop);
     const fresh = !seen.has(drop.id);
     const actor = {
-      drop, ...card,
+      drop,
+      mesh: null,
+      tex: null,
+      painted: null,
+      img: null,
+      worldH: size.worldH,
+      worldW: size.worldW,
       x: drop.x, z: drop.z, y: y0,
       vx: 0, vz: 0, vy: 0,
       grounded: !fresh,
       falling: false,
       pending: fresh,
-      radius: Math.max(0.55, card.worldW * 0.5)
+      radius: Math.max(0.55, Math.min(size.worldW * 0.5, 4))
     };
     separate(actor);
     actor.y = groundY(cm, { ...actor.drop, x: actor.x, z: actor.z });
     separate(actor);
     actor.drop.x = actor.x;
     actor.drop.z = actor.z;
-    card.mesh.position.set(actor.x, actor.y + card.worldH * 0.5, actor.z);
-    group.add(card.mesh);
-    if (fresh) {
-      actor.mesh.visible = false;
-      seen.add(drop.id);
-    }
+    if (fresh) seen.add(drop.id);
     items.push(actor);
     if (overlay) {
       overlay.drops.push({
         get x() { return actor.x; },
         get z() { return actor.z; },
-        thumb: actor.painted.thumb
+        get thumb() { return actor.painted ? actor.painted.thumb : null; }
       });
     }
-
+    rowQueue.push({ actor, prepend });
+    return actor;
+  }
+  function buildRow(actor, prepend) {
+    const drop = actor.drop;
     const author = String(drop.author || '');
     const row = document.createElement('button');
     row.type = 'button';
     row.className = 'drop-row';
     const img = document.createElement('img');
     img.alt = '';
-    img.src = card.painted.thumb.toDataURL();
+    actor.img = img;
+    if (actor.painted) img.src = actor.painted.thumb.toDataURL();
     const text = document.createElement('span');
     text.className = 'drop-row-text';
     const title = document.createElement('strong');
@@ -326,7 +365,7 @@ export async function createDrops({ scene, cameraSystem, controllerManager, mapS
     drops: items.map((actor) => ({
       get x() { return actor.x; },
       get z() { return actor.z; },
-      thumb: actor.painted.thumb
+      get thumb() { return actor.painted ? actor.painted.thumb : null; }
     }))
   };
   if (mapSystem && mapSystem.setLiveOverlay) mapSystem.setLiveOverlay(overlay);
@@ -464,6 +503,7 @@ export async function createDrops({ scene, cameraSystem, controllerManager, mapS
       flyer.z += (job.z - flyer.z) * k;
       flyer.vx = flyer.vy = flyer.vz = 0;
       if (!flyer.released && flyer.spitT > 0.18) {
+        ensureCard(job);
         job.mesh.visible = true;
         job.x = job.drop.x;
         job.z = job.drop.z;
@@ -488,7 +528,24 @@ export async function createDrops({ scene, cameraSystem, controllerManager, mapS
     flyer.mesh.lookAt(cam.x, cam.y, cam.z);
     overlay.bot.x = flyer.x;
     overlay.bot.z = flyer.z;
-    for (const actor of items) {
+    let rowBudget = 24;
+    while (rowCursor < rowQueue.length && rowBudget--) {
+      const next = rowQueue[rowCursor++];
+      buildRow(next.actor, next.prepend);
+    }
+    if (rowCursor >= rowQueue.length) {
+      rowQueue.length = 0;
+      rowCursor = 0;
+    }
+    let builds = 0;
+    let labels = 0;
+    const now = performance.now() / 1000;
+    for (let i = 0; i < items.length; i++) {
+      const actor = items[i];
+      const dx = actor.x - cam.x;
+      const dz = actor.z - cam.z;
+      const dist2 = dx * dx + dz * dz;
+      const moving = actor.falling || Math.abs(actor.vx) > 0.02 || Math.abs(actor.vz) > 0.02;
       if (actor.falling) {
         actor.vy -= 12 * dt;
         actor.y += actor.vy * dt;
@@ -501,7 +558,7 @@ export async function createDrops({ scene, cameraSystem, controllerManager, mapS
         }
         separate(actor);
         if (actor.grounded) actor.y = groundY(cm, { ...actor.drop, x: actor.x, z: actor.z });
-      } else if (actor.grounded) {
+      } else if (moving) {
         actor.x += actor.vx * dt;
         actor.z += actor.vz * dt;
         const drag = Math.exp(-dt * 2.4);
@@ -511,12 +568,20 @@ export async function createDrops({ scene, cameraSystem, controllerManager, mapS
         separate(actor);
         actor.y = groundY(cm, { ...actor.drop, x: actor.x, z: actor.z });
       }
+      const close = dist2 < BUILD_NEAR * BUILD_NEAR || actor.falling;
+      if (!actor.mesh && !actor.pending && close && builds < 4) {
+        ensureCard(actor);
+        builds++;
+      }
+      if (actor.mesh && !actor.pending && !actor.falling && dist2 > BUILD_FAR * BUILD_FAR) releaseCard(actor);
+      if (!actor.mesh) continue;
+      actor.mesh.visible = !actor.pending;
       actor.mesh.position.set(actor.x, actor.y + actor.worldH * 0.5, actor.z);
       actor.mesh.lookAt(cam.x, actor.mesh.position.y, cam.z);
-      const near = Math.hypot(cam.x - actor.x, cam.z - actor.z) < 80 || actor.falling;
-      if (near) {
-        actor.painted.redrawLabel(performance.now() / 1000);
+      if (actor.painted && labels < 4 && (actor.falling || dist2 < LABEL_NEAR * LABEL_NEAR)) {
+        actor.painted.redrawLabel(now);
         actor.tex.needsUpdate = true;
+        labels++;
       }
     }
     group.updateMatrixWorld(true);
@@ -526,10 +591,14 @@ export async function createDrops({ scene, cameraSystem, controllerManager, mapS
   const published = [];
   function publishObstacles() {
     if (!obstacles) return;
+    const focus = cameraSystem.camera.position;
     let n = 0;
     for (let i = 0; i < items.length; i++) {
       const actor = items[i];
-      if (!actor.grounded || !actor.mesh.visible) continue;
+      if (!actor.grounded) continue;
+      const dx = actor.x - focus.x;
+      const dz = actor.z - focus.z;
+      if (dx * dx + dz * dz > OBSTACLE_NEAR * OBSTACLE_NEAR) continue;
       if (!published[n]) published[n] = { x: 0, z: 0, radius: 0 };
       const slot = published[n++];
       slot.x = actor.x;
@@ -558,7 +627,7 @@ export async function createDrops({ scene, cameraSystem, controllerManager, mapS
     pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
     raycaster.setFromCamera(pointer, cameraSystem.camera);
     const meshes = [];
-    for (let i = 0; i < items.length; i++) if (items[i].mesh.visible) meshes.push(items[i].mesh);
+    for (let i = 0; i < items.length; i++) if (items[i].mesh && items[i].mesh.visible) meshes.push(items[i].mesh);
     const hits = raycaster.intersectObjects(meshes, false);
     if (!hits.length) return null;
     for (let i = 0; i < items.length; i++) if (items[i].mesh === hits[0].object) return items[i];

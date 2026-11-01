@@ -3,7 +3,7 @@ export const DROPS_REMOTE_URL = 'https://raw.githubusercontent.com/azkian1/slop-
 
 export const DROPS_POLL_MS = 3 * 60 * 1000;
 export const DROPS_FOCUS_MS = 30 * 1000;
-export const DROPS_FETCH_TIMEOUT_MS = 4000;
+export const DROPS_FETCH_TIMEOUT_MS = 30000;
 
 // hidden tabs do not poll. Focus refetches sooner than the interval, but not on every event.
 export function pollDue(lastAt, now, hidden, reason) {

@@ -2,6 +2,7 @@
 // subdivided wobbly outlines, fill nudged off the outline, slightly hot colors, hard edges.
 
 import { rngFor } from './drop-rng.js';
+import { CARD_MAX_EDGE, cardPixels } from './drop-size.js';
 
 const INK = 'rgb(15,15,15)';
 
@@ -47,16 +48,10 @@ function hot(color) {
   return color.map((c) => Math.min(255, Math.round(c * 1.15)));
 }
 
-export function paintDrop(spec, author, seedKey) {
+export function paintDrop(spec, author, seedKey, maxEdge = CARD_MAX_EDGE) {
   const rng = rngFor(seedKey);
   const handle = author.startsWith('@') ? author : `@${author}`;
-  const pad = 30;
-  const maxEdge = 640;
-  const natural = Math.max(spec.width, spec.height) * 100 + pad * 2;
-  const px = 100 * Math.min(1, maxEdge / natural);
-  const width = Math.max(8, Math.ceil(spec.width * px) + pad * 2);
-  const objectHeight = Math.max(8, Math.ceil(spec.height * px) + pad * 2);
-  const labelBand = Math.max(36, Math.round(52 * (px / 100)));
+  const { px, pad, width, objectHeight, labelBand } = cardPixels(spec, maxEdge);
   const canvas = document.createElement('canvas');
   canvas.width = width;
   canvas.height = objectHeight + labelBand;

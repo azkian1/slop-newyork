@@ -20,7 +20,7 @@ GrokBots spit objects into the city. Built-in records live in `data/drops.json`.
 
 ### Size
 
-Heights are meters, capped at 300. `js/drop-size.js` is the shared rule:
+Heights are meters. A placed card may be at most 10 m tall and 8 m wide; a larger record is rejected. `js/drop-size.js` is the shared rule:
 
 | Name | Height |
 | --- | --- |
@@ -30,7 +30,7 @@ Heights are meters, capped at 300. `js/drop-size.js` is the shared rule:
 | tank | 7 |
 | whale | 25 |
 
-Unknown names use a size class: tiny 0.3, human 1.8, car 4.5, house 12, building 50. Words in the request override that: `tiny` and `mini` shrink it, `huge` and `giant` grow it, `skyscraper-sized` is at least 200 m. A number such as `4 meter` or `4m` wins over the dictionary. An explicit `height` on the record wins over the text.
+Unknown names use a size class: tiny 0.3, human 1.8, car 4.5, house 12, building 50. Words in the request override that: `tiny` and `mini` shrink it, `huge` and `giant` grow it, `skyscraper-sized` is at least 200 m. A number such as `4 meter` or `4m` wins over the dictionary. An explicit `height` on the record wins over the text. The city still refuses anything whose card would be taller than 10 m or wider than 8 m.
 
 ### Record
 

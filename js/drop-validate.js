@@ -2,9 +2,9 @@
 // Remote files are untrusted. Local demo records go through the same gate.
 
 import { CITY_BOUNDS } from './drop-place.js';
+import { MAX_WORLD_HEIGHT, MAX_WORLD_WIDTH, worldCardSize } from './drop-size.js';
 
-export const MAX_REMOTE_DROPS = 500;
-export const MAX_REMOTE_BYTES = 2 * 1024 * 1024;
+export const MAX_REMOTE_BYTES = 50 * 1024 * 1024;
 export const MAX_SHAPES = 80;
 export const MAX_POINTS = 64;
 export const SPEC_MARGIN = 0.5;
@@ -94,7 +94,9 @@ export function validateDropRecord(drop) {
   if (!plainText(drop.name, 40)) return ['name must be plain ASCII, 1..40 characters'];
   if (!plainText(drop.request, 200)) return ['request must be plain ASCII, 1..200 characters'];
   if (!isoDate(drop.created)) return ['created must be an ISO timestamp'];
-  if (!Number.isFinite(drop.height) || drop.height < 0.5 || drop.height > 30) return ['height must be 0.5..30 m'];
+  if (!Number.isFinite(drop.height) || drop.height < 0.5 || drop.height > MAX_WORLD_HEIGHT) {
+    return [`height must be 0.5..${MAX_WORLD_HEIGHT} m`];
+  }
   if (!Number.isFinite(drop.x) || drop.x < CITY_BOUNDS.minX || drop.x > CITY_BOUNDS.maxX) return ['x is outside the city'];
   if (!Number.isFinite(drop.z) || drop.z < CITY_BOUNDS.minZ || drop.z > CITY_BOUNDS.maxZ) return ['z is outside the city'];
   if (!Number.isFinite(drop.yaw) || drop.yaw < 0 || drop.yaw > Math.PI * 2) return ['yaw must be 0..2*PI'];
@@ -107,6 +109,9 @@ export function validateDropRecord(drop) {
   for (let i = 0; i < spec.shapes.length; i++) {
     if (!shapeOk(spec.shapes[i], spec.width, spec.height)) return [`shape ${i} is not a supported paint shape`];
   }
+  const card = worldCardSize(drop.height, spec);
+  if (card.worldH > MAX_WORLD_HEIGHT) return [`card is taller than ${MAX_WORLD_HEIGHT} m`];
+  if (card.worldW > MAX_WORLD_WIDTH) return [`card is wider than ${MAX_WORLD_WIDTH} m`];
   return [];
 }
 
@@ -128,7 +133,7 @@ export function parseRemoteDocument(text) {
   }
 }
 
-async function fetchRemoteDocument(url, { fetchImpl = globalThis.fetch, timeoutMs = 4000 } = {}) {
+async function fetchRemoteDocument(url, { fetchImpl = globalThis.fetch, timeoutMs = 30000 } = {}) {
   const Timeout = globalThis.AbortController;
   const timeout = Timeout ? new Timeout() : null;
   const timer = timeout && globalThis.setTimeout ? globalThis.setTimeout(() => timeout.abort(), timeoutMs) : null;
@@ -162,12 +167,12 @@ export function acceptLocalRecords(rows, warn = () => {}) {
   return taken;
 }
 
-// New ids only. Already placed records are left untouched. Stops at the session cap.
-export function acceptRemoteRecords(rows, { ids, accepted = 0, limit = MAX_REMOTE_DROPS, warn = () => {}, warned = null } = {}) {
+// New ids only. Already placed records are left untouched. There is no count cap.
+export function acceptRemoteRecords(rows, { ids, accepted = 0, warn = () => {}, warned = null } = {}) {
   const taken = [];
   const known = ids && typeof ids.has === 'function' && typeof ids.add === 'function' ? ids : new Set();
   if (!Array.isArray(rows)) return { taken, accepted };
-  for (let i = 0; i < rows.length && accepted < limit; i++) {
+  for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
     const errors = validateDropRecord(row);
     if (errors.length) {

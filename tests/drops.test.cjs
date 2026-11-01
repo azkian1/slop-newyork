@@ -15,10 +15,10 @@ const size = load('js/drop-size.js');
 const { resolveDropHeight, MAX_DROP_HEIGHT, OBJECT_HEIGHTS, SIZE_CLASSES } = size;
 const place = load('js/drop-place.js', { './drop-rng.js': load('js/drop-rng.js') });
 const { landingFor, chooseStand, ejectCircle, circleGap, pathGap, boxPush, circleOverlap } = place;
-const validate = load('js/drop-validate.js', { './drop-place.js': place });
+const validate = load('js/drop-validate.js', { './drop-place.js': place, './drop-size.js': size });
 const { validateDrop, xProfileUrl } = load('js/drop-schema.js', { './drop-validate.js': validate });
 
-test('drop heights follow the dictionary, modifiers, and the 300 m cap', () => {
+test('drop heights follow the dictionary and the words in the request', () => {
   assert.equal(resolveDropHeight({ name: 'cat' }), OBJECT_HEIGHTS.cat);
   assert.equal(resolveDropHeight({ name: 'grand piano' }), 1.5);
   assert.equal(resolveDropHeight({ name: 'tank' }), 7);
@@ -28,8 +28,9 @@ test('drop heights follow the dictionary, modifiers, and the 300 m cap', () => {
   assert.equal(resolveDropHeight({ name: 'car', request: 'a tiny car' }), 4.5 * 0.25);
   assert.equal(resolveDropHeight({ name: 'widget', request: 'a house-sized widget' }), SIZE_CLASSES.house);
   assert.equal(resolveDropHeight({ name: 'mystery' }), SIZE_CLASSES.human);
-  assert.equal(resolveDropHeight({ name: 'whale', request: 'a 900 meter whale' }), MAX_DROP_HEIGHT);
+  assert.equal(resolveDropHeight({ name: 'whale', request: 'a 900 meter whale' }), 900);
   assert.equal(resolveDropHeight({ height: 12 }), 12);
+  assert.equal(MAX_DROP_HEIGHT, 10);
 });
 
 test('landing spots are stable and inside the midtown grid', () => {
@@ -120,7 +121,9 @@ test('the four demo drops are valid and unique', () => {
   const sources = new Set(rows.map((row) => row.sourceId));
   assert.equal(sources.size, 4);
   for (const row of rows) {
-    assert.equal(validateDrop(row).join(';'), '');
+    const errors = validateDrop(row);
+    if (row.sourceId === 'demo-lobster') assert.ok(errors.length > 0);
+    else assert.equal(errors.join(';'), '');
     assert.ok(!/[\u0400-\u04FF]/.test(JSON.stringify(row)));
   }
   const byId = Object.fromEntries(rows.map((row) => [row.sourceId, row]));

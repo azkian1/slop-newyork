@@ -1,7 +1,13 @@
 // World height of a dropped object, in meters. The drawing spec is scaled to this height.
 // Explicit numbers in the request win, then size words, then the dictionary, then a size class.
+// The placed card may not exceed MAX_WORLD_HEIGHT by MAX_WORLD_WIDTH. The validator rejects
+// anything larger. This resolver reports the asked size and does not shrink it.
 
-export const MAX_DROP_HEIGHT = 300;
+export const MAX_WORLD_HEIGHT = 10;
+export const MAX_WORLD_WIDTH = 8;
+export const MAX_DROP_HEIGHT = MAX_WORLD_HEIGHT;
+// Paint resolution shared by the renderer and the size check. Far below the old 640 px edge.
+export const CARD_MAX_EDGE = 192;
 
 export const OBJECT_HEIGHTS = {
   cat: 0.4,
@@ -47,7 +53,27 @@ export const SIZE_CLASSES = {
 
 function clampHeight(value) {
   if (!Number.isFinite(value) || value <= 0) return SIZE_CLASSES.human;
-  return Math.min(MAX_DROP_HEIGHT, value);
+  return value;
+}
+
+// Pixel layout of a card. Kept in lockstep with paintDrop so the validator
+// measures the same billboard the city will stand up.
+export function cardPixels(spec, maxEdge = CARD_MAX_EDGE) {
+  const pad = 30;
+  const natural = Math.max(spec.width, spec.height) * 100 + pad * 2;
+  const px = 100 * Math.min(1, maxEdge / natural);
+  const width = Math.max(8, Math.ceil(spec.width * px) + pad * 2);
+  const objectHeight = Math.max(8, Math.ceil(spec.height * px) + pad * 2);
+  const labelBand = Math.max(36, Math.round(52 * (px / 100)));
+  return { px, pad, width, objectHeight, labelBand };
+}
+
+export function worldCardSize(height, spec, maxEdge = CARD_MAX_EDGE) {
+  const card = cardPixels(spec, maxEdge);
+  const canvasH = card.objectHeight + card.labelBand;
+  const worldH = height * (canvasH / card.objectHeight);
+  const worldW = worldH * (card.width / canvasH);
+  return { worldW, worldH, objectPx: card.objectHeight };
 }
 
 function lookupHeight(name) {

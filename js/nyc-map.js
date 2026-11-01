@@ -499,13 +499,18 @@ class NYCMapSystem {
     if (!overlay) return;
     const drops = overlay.drops;
     if (drops) {
+      const halfW = w * 0.5;
+      const halfH = h * 0.5;
+      const icon = mode === 'mini' ? 16 : 14;
+      let thumbs = 0;
       for (let i = 0; i < drops.length; i++) {
         const drop = drops[i];
         const x = toX(drop.x);
         const y = toY(drop.z);
-        if (Math.abs(x) > w * 0.5 || Math.abs(y) > h * 0.5) continue;
-        if (mode === 'dot') drawDropIcon(ctx, x, y, null, 6);
-        else drawDropIcon(ctx, x, y, drop.thumb, mode === 'mini' ? 16 : 14);
+        if (Math.abs(x) > halfW || Math.abs(y) > halfH) continue;
+        const thumb = mode !== 'dot' && thumbs < 36 ? drop.thumb : null;
+        if (thumb) thumbs++;
+        drawDropIcon(ctx, x, y, thumb, mode === 'dot' ? 6 : icon);
       }
     }
     const bot = overlay.bot;
