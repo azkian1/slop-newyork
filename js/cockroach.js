@@ -2,6 +2,7 @@ import * as THREE from 'three/webgpu';
 import { BODY_SPECS } from './cars.js';
 import { BUS_SPEC } from './bus.js';
 import { buildingContact, collisionBody } from './controllers.js';
+import { deckHeightAt } from './city-grid.js';
 
 // SLOP COCKROACH: the player is a 4 cm cockroach. Climbs anything by cheating, dies only from below.
 
@@ -52,6 +53,8 @@ const GROW_TIME = 0.5;       // s to grow or shrink
 const GIANT_HALF_W = 1.15;   // a bit wider than a sedan (0.86)
 const GIANT_HALF_L = 2.6;    // a bit longer than a sedan (2.18)
 const PERSON_HALF = 0.32;    // traffic.js person footprint, used while the body is still small
+const STEP_UP = 0.45; // sidewalks and curbs are 0.22 m; taller than this is a wall
+const FOOT_REACH = 0.028; // nose and flanks, so the shell clears a curb before the center enters it
 const TURN_RATE = 3.2;
 const RADIUS = 0.03;
 const CRUMB_COUNT = 28;
@@ -79,6 +82,31 @@ function giantFootprint(scale) {
 
 function roachVulnerable(scale, giant) {
   return !(scale > 1 || giant > 0);
+}
+
+// Step onto a curb, or stay put when the rise is a wall. Never remain below the floor.
+export function resolveCurb(feetY, floorY, stepUp = STEP_UP) {
+  if (!(floorY <= feetY + stepUp)) return feetY;
+  if (feetY < floorY) return floorY;
+  return feetY;
+}
+
+// heights[0] is the column under the body (road, sidewalk, park, plaza, or a deck we are inside).
+// Later heights are the footprint. They can only raise us by one step, so a roof beside the road does not hoist the body.
+export function supportHeight(feetY, heights, stepUp = STEP_UP) {
+  let best = heights.length ? heights[0] : feetY;
+  const cap = feetY + stepUp;
+  for (let i = 1; i < heights.length; i++) {
+    const h = heights[i];
+    if (h > best && h <= cap) best = h;
+  }
+  return best;
+}
+
+// Snap up onto that support. Does not pull a body that is legitimately above the floor back down.
+export function climbStep(feetY, heights, stepUp = STEP_UP) {
+  const floor = supportHeight(feetY, heights, stepUp);
+  return feetY < floor ? floor : feetY;
 }
 
 function buildRoachModel() {
@@ -282,14 +310,40 @@ function createCockroach({ scene, controllerManager: cm, trafficSystem, cameraSy
     }
     return best;
   }
-  // Highest roof (or street) under (x, z) not above y
+  // Column height probed from above the feet, so a slab the body has already entered still
+  // reports its top. Logical walk surfaces (road, sidewalk, park, plaza deck) always count.
+  // A collider top counts only within a step, otherwise it is a wall and stays out of the floor.
   function surfaceAt(x, z, y) {
+    const probe = y + STEP_UP;
     let s = cm.getGroundHeight(x, z, 'person');
+    const deck = deckHeightAt(x, z);
+    if (deck > s) s = deck;
     for (const c of near(x, z, 2)) {
-      if (!Number.isFinite(c.maxY) || c.maxY > y + 0.05 || c.maxY <= s) continue;
+      if (!Number.isFinite(c.maxY) || c.maxY > probe || c.maxY <= s) continue;
       if (buildingContact(c, x, c.maxY - 0.02, z, collisionBody('person', 0.001, 0), contact)) s = c.maxY;
     }
     return s;
+  }
+  function supportAt(x, z, y) {
+    const reach = FOOT_REACH * st.scale;
+    const hx = Math.sin(p.heading);
+    const hz = Math.cos(p.heading);
+    return supportHeight(y, [
+      surfaceAt(x, z, y),
+      surfaceAt(x + hx * reach, z + hz * reach, y),
+      surfaceAt(x - hx * reach, z - hz * reach, y),
+      surfaceAt(x - hz * reach, z + hx * reach, y),
+      surfaceAt(x + hz * reach, z - hx * reach, y)
+    ]);
+  }
+  // Stand on the support before horizontal resolution, so a low deck is a floor and not a wall we get shoved through.
+  function plantFeet() {
+    if (st.vy > 0) return;
+    const floor = supportAt(p.position.x, p.position.z, p.position.y);
+    if (p.position.y < floor) {
+      p.position.y = floor;
+      st.vy = 0;
+    }
   }
   const streetLevel = (x, z) => cm.getGroundHeight(x, z, 'person');
 
@@ -395,7 +449,10 @@ function createCockroach({ scene, controllerManager: cm, trafficSystem, cameraSy
       const bx = p.position.x + hx * step, bz = p.position.z + hz * step;
       p.position.x = bx;
       p.position.z = bz;
+      // Climb, or pop out of a slab we have entered, before the sideways push treats that slab as a wall.
+      plantFeet();
       cm.resolveHorizontalCollision(p.position, RADIUS * st.scale, null, null);
+      plantFeet();
       const pushed = Math.hypot(p.position.x - bx, p.position.z - bz);
       if (fwd > 0 && pushed > Math.abs(step) * 0.3) {
         const hit = blockingCollider(bx + hx * 0.02 * st.scale, p.position.y, bz + hz * 0.02 * st.scale);
@@ -410,15 +467,15 @@ function createCockroach({ scene, controllerManager: cm, trafficSystem, cameraSy
       if (st.mode === 'ground' && p.position.y < streetLevel(p.position.x, p.position.z) + 0.05 && tryAttachMoving(fwd)) return;
     }
     // vertical: jumps, falls off roofs
-    const surface = surfaceAt(p.position.x, p.position.z, p.position.y);
-    const grounded = p.position.y <= surface + 0.005;
+    const surface = supportAt(p.position.x, p.position.z, p.position.y);
+    const grounded = p.position.y <= surface + 0.02;
     if (grounded && key('up')) st.vy = 1.6;
     if (!grounded || st.vy > 0) {
       st.vy -= 9.8 * dt;
       p.position.y += st.vy * dt;
       if (p.position.y <= surface) { p.position.y = surface; st.vy = 0; }
     } else {
-      p.position.y = surface;
+      p.position.y = climbStep(p.position.y, [surface]);
       st.vy = 0;
     }
     if (p.position.y <= surface + 0.005) {
@@ -830,4 +887,4 @@ function createCockroach({ scene, controllerManager: cm, trafficSystem, cameraSy
   return api;
 }
 
-export { createCockroach, stepGiant, giantFootprint, roachVulnerable, GIANT_TIME, GIANT_SCALE, GIANT_HALF_W, GIANT_HALF_L };
+export { createCockroach, stepGiant, giantFootprint, roachVulnerable, resolveCurb, supportHeight, climbStep, GIANT_TIME, GIANT_SCALE, GIANT_HALF_W, GIANT_HALF_L, STEP_UP, FOOT_REACH };

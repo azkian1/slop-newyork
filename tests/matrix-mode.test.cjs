@@ -47,6 +47,9 @@ test('M swaps mesh materials for a world-space glyph shader', () => {
   assert.match(main, /matrixMode\.setEnabled\(scene/);
   assert.match(mode, /positionWorld/);
   assert.match(mode, /normalWorld/);
+  assert.match(mode, /mat\.positionNode\) patchPlaced/);
+  assert.match(mode, /emissive\.setRGB\(1, 1, 1\)/);
+  assert.match(mode, /vec3\(0\.0, 0\.34, 0\.09\)\.mul\(figure\)/);
   assert.match(mode, /MeshBasicNodeMaterial/);
   assert.doesNotMatch(grade, /matrix\.enabled/);
   assert.match(html, /js\/matrix-mode\.js/);

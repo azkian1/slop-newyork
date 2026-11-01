@@ -7,7 +7,8 @@ const { loadModule } = require('./helpers/module.cjs');
 const root = join(__dirname, '..');
 const source = readFileSync(join(root, 'js/cockroach.js'), 'utf8');
 const {
-  stepGiant, giantFootprint, roachVulnerable, GIANT_TIME, GIANT_SCALE, GIANT_HALF_W, GIANT_HALF_L
+  stepGiant, giantFootprint, roachVulnerable, resolveCurb, supportHeight, climbStep, FOOT_REACH,
+  GIANT_TIME, GIANT_SCALE, GIANT_HALF_W, GIANT_HALF_L
 } = loadModule(source, {
   imports: {
     'three/webgpu': {},
@@ -16,7 +17,8 @@ const {
     './controllers.js': {
       buildingContact() { return false; },
       collisionBody() { return {}; }
-    }
+    },
+    './city-grid.js': { deckHeightAt() { return 0; } }
   }
 });
 
@@ -60,4 +62,68 @@ test('traffic and pedestrians reuse the player vehicle for a giant roach', () =>
   assert.match(peds, /function frightenGiant/);
   assert.match(peds, /ent\.roachScale > 1/);
   assert.match(audio, /kind === 'scream'/);
+});
+
+test('a curb step lifts the roach onto the sidewalk and a wall does not', () => {
+  assert.equal(resolveCurb(0, 0), 0);
+  assert.equal(resolveCurb(0, 0.22), 0.22);
+  assert.equal(resolveCurb(0.05, 0.22), 0.22);
+  assert.equal(resolveCurb(0, 3), 0);
+  let y = 0;
+  for (const floor of [0, 0, 0.22, 0.22, 0.22]) y = resolveCurb(y, floor);
+  assert.equal(y, 0.22);
+  y = resolveCurb(0.22, 0);
+  assert.equal(y, 0.22);
+  for (let i = 0; i < 6; i++) y = resolveCurb(y, i % 2 ? 0.22 : 0);
+  assert.ok(y >= 0);
+  assert.ok(y <= 0.22);
+});
+
+// Same substep the roach uses: move, then stand on the highest column the body overlaps.
+function drive(speed, sidewalkAt, passes) {
+  const dt = 1 / 60;
+  const pos = { x: sidewalkAt - 1.2, z: 0, y: 0, heading: Math.PI / 2 };
+  const heightAt = (x) => (x >= sidewalkAt ? 0.22 : 0);
+  let lowestOnSlab = Infinity;
+  for (let pass = 0; pass < passes; pass++) {
+    const dir = pass % 2 === 0 ? 1 : -1;
+    pos.heading = Math.PI / 2;
+    for (let frame = 0; frame < 180; frame++) {
+      const distance = dir * speed * dt;
+      const n = Math.max(1, Math.ceil(Math.abs(distance) / 0.06));
+      const step = distance / n;
+      const hx = Math.sin(pos.heading);
+      const hz = Math.cos(pos.heading);
+      for (let i = 0; i < n; i++) {
+        pos.x += hx * step;
+        pos.z += hz * step;
+        const offs = [[0, 0], [hx, hz], [-hx, -hz], [-hz, hx], [hz, -hx]];
+        const heights = offs.map(([ox, oz], k) => {
+          const reach = k === 0 ? 0 : FOOT_REACH;
+          return heightAt(pos.x + ox * reach, pos.z + oz * reach);
+        });
+        pos.y = climbStep(pos.y, heights);
+        const overlaps = pos.x + FOOT_REACH >= sidewalkAt && pos.x - FOOT_REACH <= sidewalkAt + 8;
+        if (overlaps && pos.x >= sidewalkAt - FOOT_REACH) lowestOnSlab = Math.min(lowestOnSlab, pos.y);
+      }
+    }
+  }
+  return { pos, lowestOnSlab };
+}
+
+test('driving onto a sidewalk climbs the curb and never stays inside the slab', () => {
+  assert.equal(supportHeight(0, [0, 0.22, 0, 0]), 0.22);
+  assert.equal(supportHeight(0, [0, 3]), 0);
+  assert.equal(supportHeight(0, [0.22, 0]), 0.22);
+  assert.equal(climbStep(0, [0.22]), 0.22);
+  assert.equal(climbStep(0.22, [0]), 0.22);
+  for (const speed of [1.5, 14]) {
+    const crossed = drive(speed, 0, 6);
+    assert.ok(crossed.pos.x < -0.2, 'ends back on the road after an even number of passes');
+    assert.equal(crossed.lowestOnSlab, 0.22);
+  }
+  const inside = { y: climbStep(0, [0.22, 0.22, 0.22, 0.22]) };
+  assert.equal(inside.y, 0.22);
+  const deck = climbStep(0, [0.22]);
+  assert.equal(deck, 0.22);
 });

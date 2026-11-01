@@ -85,6 +85,17 @@ function getStreetGroundHeight(x, z) {
   return height;
 }
 
+// Height of a raised deck (plaza, lawn bed) at (x, z), or 0 on ordinary road and sidewalk.
+// Unlike getStreetGroundHeight this does not pretend the whole city is a 0.22 m slab.
+function deckHeightAt(x, z) {
+  let height = 0;
+  for (const s of streetGroundSurfaces) {
+    if (s.height > height && x >= s.minX && x <= s.maxX && z >= s.minZ && z <= s.maxZ
+      && pointInPolygonXZ(s.poly, x, z)) height = s.height;
+  }
+  return height;
+}
+
 // Manhattan's coastline, raised sidewalks, parks, waterfront piers and shore highways.
 // Boroughs, harbor islands and major river bridges are built in boroughs.js.
 
@@ -3534,6 +3545,7 @@ function buildUnderpassPortal(frames, acc, quad, lights, colliders) {
 export {
   buildCityGrid,
   getStreetGroundHeight,
+  deckHeightAt,
   batchStaticGroupMeshes,
   centralParkClearings,
   parkTreeSites,
