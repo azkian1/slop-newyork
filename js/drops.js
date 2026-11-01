@@ -7,7 +7,13 @@ import { paintDrop } from './drop-paint.js';
 import { buildingContact } from './controllers.js';
 import { makeBot } from './grok-bot.js';
 import { chooseStand, ejectCircle } from './drop-place.js';
-import { xProfileUrl } from './drop-schema.js';
+import { DROPS_FETCH_TIMEOUT_MS, DROPS_POLL_MS, DROPS_REMOTE_URL, pollDue } from './drops-config.js';
+import {
+  acceptLocalRecords,
+  acceptRemoteRecords,
+  fetchRemoteDocument,
+  xProfileUrl
+} from './drop-validate.js';
 
 const SEEN_KEY = 'slop-drops-seen';
 
@@ -65,15 +71,28 @@ function makeCard(drop) {
 }
 
 export async function createDrops({ scene, cameraSystem, controllerManager, mapSystem, renderer, network, obstacles }) {
-  let rows;
+  let localRows = [];
   try {
     const res = await fetch(new URL('../data/drops.json', import.meta.url), { cache: 'no-store' });
-    if (!res.ok) return null;
-    rows = await res.json();
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data)) localRows = data;
+    }
   } catch {
-    return null;
+    localRows = [];
   }
-  if (!Array.isArray(rows) || !rows.length) return null;
+  // A missing or hostile remote file must not surface in the page. Local drawings still load.
+  const remoteRows = await fetchRemoteDocument(DROPS_REMOTE_URL, { timeoutMs: DROPS_FETCH_TIMEOUT_MS });
+  const local = acceptLocalRecords(localRows, (message) => console.warn(message));
+  const knownIds = new Set(local.map((row) => row.id));
+  const warned = new Set();
+  let remote = acceptRemoteRecords(remoteRows, {
+    ids: knownIds,
+    warn: (message) => console.warn(message),
+    warned
+  });
+  const rows = [...local, ...remote.taken];
+  if (!rows.length) return null;
 
   const seen = loadSeen();
   const cm = controllerManager;
@@ -84,12 +103,18 @@ export async function createDrops({ scene, cameraSystem, controllerManager, mapS
   const panel = document.createElement('aside');
   panel.id = 'drop-log';
   panel.className = 'drop-log';
-  panel.innerHTML = '<button type="button" class="drop-log-toggle" aria-expanded="true">Drops</button><div class="drop-log-list"></div>';
+  const toggle = document.createElement('button');
+  toggle.type = 'button';
+  toggle.className = 'drop-log-toggle';
+  toggle.setAttribute('aria-expanded', 'true');
+  toggle.textContent = 'Drops';
+  const list = document.createElement('div');
+  list.className = 'drop-log-list';
+  panel.append(toggle, list);
   document.body.appendChild(panel);
-  const list = panel.querySelector('.drop-log-list');
-  panel.querySelector('.drop-log-toggle').addEventListener('click', () => {
+  toggle.addEventListener('click', () => {
     const closed = panel.classList.toggle('is-closed');
-    panel.querySelector('.drop-log-toggle').setAttribute('aria-expanded', String(!closed));
+    toggle.setAttribute('aria-expanded', String(!closed));
   });
 
   const items = [];
@@ -128,9 +153,8 @@ export async function createDrops({ scene, cameraSystem, controllerManager, mapS
     if (window.roach && window.roach.teleport) window.roach.teleport(spot.x, spot.z, spot.heading, aim);
     else cm.teleportActiveTo(spot.x, spot.z, spot.heading);
   }
-  const newest = [...rows].sort((a, b) => Date.parse(b.created) - Date.parse(a.created));
-
-  for (const drop of newest) {
+  let overlay = null;
+  function addActor(drop, { prepend = false } = {}) {
     const card = makeCard(drop);
     const y0 = groundY(cm, drop);
     const fresh = !seen.has(drop.id);
@@ -155,8 +179,14 @@ export async function createDrops({ scene, cameraSystem, controllerManager, mapS
       seen.add(drop.id);
     }
     items.push(actor);
+    if (overlay) {
+      overlay.drops.push({
+        get x() { return actor.x; },
+        get z() { return actor.z; },
+        thumb: actor.painted.thumb
+      });
+    }
 
-    const name = String(drop.name || '');
     const author = String(drop.author || '');
     const row = document.createElement('button');
     row.type = 'button';
@@ -167,10 +197,10 @@ export async function createDrops({ scene, cameraSystem, controllerManager, mapS
     const text = document.createElement('span');
     text.className = 'drop-row-text';
     const title = document.createElement('strong');
-    title.textContent = name;
+    title.textContent = String(drop.name || '');
     const meta = document.createElement('em');
     const profile = xProfileUrl(author);
-    const handle = author.startsWith('@') ? author : `@${author}`;
+    const handle = `@${author.replace(/^@/, '')}`;
     if (profile) {
       const link = document.createElement('a');
       link.className = 'drop-author';
@@ -187,8 +217,12 @@ export async function createDrops({ scene, cameraSystem, controllerManager, mapS
     text.append(title, meta);
     row.append(img, text);
     row.addEventListener('click', () => teleportTo(actor));
-    list.appendChild(row);
+    if (prepend && list.firstChild) list.insertBefore(row, list.firstChild);
+    else list.appendChild(row);
+    return actor;
   }
+  const newest = [...rows].sort((a, b) => Date.parse(b.created) - Date.parse(a.created));
+  for (const drop of newest) addActor(drop);
   saveSeen(seen);
 
   const streets = ((network && network.edges) || []).map((edge) => ({
@@ -287,7 +321,7 @@ export async function createDrops({ scene, cameraSystem, controllerManager, mapS
     released: false
   };
   group.add(flyer.mesh);
-  const overlay = {
+  overlay = {
     bot: { x: flyer.x, z: flyer.z },
     drops: items.map((actor) => ({
       get x() { return actor.x; },
@@ -489,13 +523,14 @@ export async function createDrops({ scene, cameraSystem, controllerManager, mapS
     publishObstacles();
   }
 
-  const published = items.map(() => ({ x: 0, z: 0, radius: 0 }));
+  const published = [];
   function publishObstacles() {
     if (!obstacles) return;
     let n = 0;
     for (let i = 0; i < items.length; i++) {
       const actor = items[i];
       if (!actor.grounded || !actor.mesh.visible) continue;
+      if (!published[n]) published[n] = { x: 0, z: 0, radius: 0 };
       const slot = published[n++];
       slot.x = actor.x;
       slot.z = actor.z;
@@ -586,6 +621,43 @@ export async function createDrops({ scene, cameraSystem, controllerManager, mapS
       teleportTo(actor);
     });
   }
+
+  let lastFetch = Date.now();
+  let polling = false;
+  let pollTimer = 0;
+  function schedulePoll() {
+    clearTimeout(pollTimer);
+    if (document.hidden) return;
+    const delay = Math.max(1000, DROPS_POLL_MS - (Date.now() - lastFetch));
+    pollTimer = setTimeout(() => { pollRemote('interval'); }, delay);
+  }
+  function pollRemote(reason) {
+    if (polling || !pollDue(lastFetch, Date.now(), document.hidden, reason)) return false;
+    polling = true;
+    lastFetch = Date.now();
+    clearTimeout(pollTimer);
+    fetchRemoteDocument(DROPS_REMOTE_URL, { timeoutMs: DROPS_FETCH_TIMEOUT_MS }).then((again) => {
+      remote = acceptRemoteRecords(again, {
+        ids: knownIds,
+        accepted: remote.accepted,
+        warn: (message) => console.warn(message),
+        warned
+      });
+      for (let i = 0; i < remote.taken.length; i++) addActor(remote.taken[i], { prepend: true });
+    }).catch(() => {
+      /* remote stays optional */
+    }).finally(() => {
+      polling = false;
+      schedulePoll();
+    });
+    return true;
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) clearTimeout(pollTimer);
+    else if (!pollRemote('focus')) schedulePoll();
+  });
+  window.addEventListener('focus', () => { pollRemote('focus'); });
+  schedulePoll();
 
   return { group, update };
 }

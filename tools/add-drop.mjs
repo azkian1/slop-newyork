@@ -18,7 +18,7 @@ export function buildDrop(payload, existing) {
   const errors = [];
   if (!payload || typeof payload !== 'object') return { errors: ['payload must be an object'] };
   const author = sanitizeText(String(payload.author || '').replace(/^@/, ''), MAX_HANDLE);
-  const sourceId = sanitizeText(payload.sourceId, 80);
+  const sourceId = sanitizeText(payload.sourceId, 64);
   const name = sanitizeText(payload.name, MAX_NAME);
   const request = sanitizeText(payload.request, MAX_TEXT);
   if (!author) errors.push('author is required');

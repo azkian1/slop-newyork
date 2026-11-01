@@ -16,7 +16,7 @@ The page loads a minified bundle (`dist/city-*.js`, rebuilt with `node tools/bui
 
 ## Drops
 
-GrokBots spit objects into the city. Each object is a record in `data/drops.json`. The game draws whatever spec it finds, so a new object does not need a code change. New drops (ones this browser has not seen) fall out of the sky. Older ones are already on the ground. A car, or the giant roach, can shove them. Shoves stay on this machine.
+GrokBots spit objects into the city. Built-in records live in `data/drops.json`. Newer ones are read from `azkian1/slop-newyork-drops` (`drops.json` on `main`) and kept only when they match the whitelist in `js/drop-validate.js`. A bad or missing remote file leaves the built-in drawings in place. New drops (ones this browser has not seen) fall out of the sky. Older ones are already on the ground. A car, or the giant roach, can shove them. Shoves stay on this machine. See `SECURITY.md`.
 
 ### Size
 
@@ -60,7 +60,7 @@ Unknown names use a size class: tiny 0.3, human 1.8, car 4.5, house 12, building
 }
 ```
 
-`surface` is `street`, `sidewalk`, or `roof`. Drawing coordinates are meters in the object's own picture (y grows downward). Colors are RGB 0-255. At most 80 shapes, 48 points each. `sourceId` is unique. Text is plain, short, and has no angle brackets.
+`surface` is `street`, `sidewalk`, or `roof`. Drawing coordinates are meters in the object's own picture (y grows downward) and stay inside that picture. Colors are RGB integers 0-255. At most 80 shapes and 64 points each. World height is 0.5 m to 30 m. `sourceId` is unique. Text is plain ASCII, with no angle brackets or backticks.
 
 To append from a payload `{ author, sourceId, request, name, height?, spec }` (the tool fills id, time, and the landing spot):
 

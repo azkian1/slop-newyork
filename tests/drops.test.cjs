@@ -15,7 +15,8 @@ const size = load('js/drop-size.js');
 const { resolveDropHeight, MAX_DROP_HEIGHT, OBJECT_HEIGHTS, SIZE_CLASSES } = size;
 const place = load('js/drop-place.js', { './drop-rng.js': load('js/drop-rng.js') });
 const { landingFor, chooseStand, ejectCircle, circleGap, pathGap, boxPush, circleOverlap } = place;
-const { validateDrop, xProfileUrl } = load('js/drop-schema.js', { './drop-size.js': size });
+const validate = load('js/drop-validate.js', { './drop-place.js': place });
+const { validateDrop, xProfileUrl } = load('js/drop-schema.js', { './drop-validate.js': validate });
 
 test('drop heights follow the dictionary, modifiers, and the 300 m cap', () => {
   assert.equal(resolveDropHeight({ name: 'cat' }), OBJECT_HEIGHTS.cat);

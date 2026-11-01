@@ -1,5 +1,5 @@
-const CACHE = 'slop-6bb210b6df';
-const FILES = ["./dist/city-6bb210b6df.js","./js/building-geodata.bin.gz","./js/tree-geodata.bin.gz","./dist/part-2HTL2EIG.js","./dist/part-5FHELVQX.js","./dist/part-APXUDIYS.js","./dist/part-FESS3OOB.js","./dist/part-HYZ3WC7W.js","./dist/part-O4WC5KQW.js","./dist/part-PH6WOWCI.js","./dist/part-RMIFO4CX.js","./dist/part-XKQIZPQY.js"];
+const CACHE = 'slop-f96c514a8a';
+const FILES = ["./dist/city-f96c514a8a.js","./js/building-geodata.bin.gz","./js/tree-geodata.bin.gz","./dist/part-5FHELVQX.js","./dist/part-APXUDIYS.js","./dist/part-HYZ3WC7W.js","./dist/part-JWV234YZ.js","./dist/part-O4WC5KQW.js","./dist/part-PH6WOWCI.js","./dist/part-PIW3XB34.js","./dist/part-RMIFO4CX.js","./dist/part-XKQIZPQY.js"];
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(FILES)).then(() => self.skipWaiting()));
 });

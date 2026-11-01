@@ -9,6 +9,14 @@ const STREET0 = -1370;
 const AVENUE_STEP = 270;
 const STREET_STEP = 80;
 
+// Envelope of landingFor: avenue/street lattice plus the street, sidewalk, and roof offsets.
+export const CITY_BOUNDS = {
+  minX: AVENUE0 - 8,
+  maxX: AVENUE0 + 7 * AVENUE_STEP + 67,
+  minZ: STREET0 - 19,
+  maxZ: STREET0 + 39 * STREET_STEP + 19
+};
+
 // Stand a few metres in front of a drawing, on a spot `probe` accepts.
 // fx,fz points from the drawing toward the viewer. The heading faces the drawing.
 // probe(x, z) returns {x, z} when that point is walkable, or null. A probe that
