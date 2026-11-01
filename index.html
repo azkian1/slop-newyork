@@ -5,6 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>Slop New York</title>
   <link rel="icon" href="data:," />
+  <style>
+    html, body { margin: 0; background: #0c0d10; color: #f6f5f2; }
+    #loading-overlay { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; background: #0c0d10; color: #f6f5f2; font-family: sans-serif; }
+  </style>
   <meta name="description" content="Photorealistic GTA-style 3D Slop New York simulation built with Three.js WebGPURenderer and TSL shaders featuring complete Manhattan street map (125th St to Battery Park), third-person navigation (Person, Car, Cyclist, Helicopter), and 11 cinematic cameras at 60 FPS." />
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
   <!-- three.js dev branch pinned to a commit (builds committed to mrdoob/three.js@dev, served by jsDelivr) -->
@@ -18,7 +22,7 @@
       }
     }
   </script>
-  <link rel="modulepreload" href="./dist/city-7b10f882ff.js" />
+  <link rel="modulepreload" href="./dist/city-489e337874.js" />
   <link rel="modulepreload" href="./dist/part-T65JIARU.js" />
   <link rel="modulepreload" href="./dist/part-5FHELVQX.js" />
   <link rel="modulepreload" href="./dist/part-PH6WOWCI.js" />
@@ -30,7 +34,7 @@
       buildings: fetch(new URL('./js/building-geodata.bin.gz', import.meta.url))
     };
   </script>
-  <script type="module" src="./dist/city-7b10f882ff.js"></script>
+  <script type="module" src="./dist/city-489e337874.js"></script>
   <!-- Inter (UI) & Overpass (street-name signs: modelled on Highway Gothic, the US road sign typeface) -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />

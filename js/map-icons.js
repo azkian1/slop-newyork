@@ -2,28 +2,24 @@
 
 export function drawGrokIcon(ctx, x, y, r) {
   ctx.save();
-  ctx.fillStyle = '#111114';
+  ctx.fillStyle = '#f4f4f5';
   ctx.beginPath();
   ctx.arc(x, y, r, 0, Math.PI * 2);
   ctx.fill();
-  ctx.strokeStyle = 'rgba(186, 164, 240, 0.95)';
-  ctx.lineWidth = Math.max(1, r * 0.14);
-  ctx.beginPath();
-  ctx.arc(x, y, r * 0.78, -0.35, 1.05);
+  ctx.strokeStyle = '#1a1a1e';
+  ctx.lineWidth = Math.max(1, r * 0.12);
   ctx.stroke();
-  ctx.fillStyle = '#ffffff';
+  ctx.fillStyle = '#141414';
   const ew = Math.max(1.3, r * 0.16);
-  const eh = r * 0.62;
-  const gap = r * 0.22;
-  const left = x + r * 0.06;
-  const top = y - eh * 0.5;
-  const pill = (px) => {
+  const eh = r * 0.55;
+  const gap = r * 0.2;
+  const pill = (px, py) => {
     ctx.beginPath();
-    ctx.ellipse(px + ew * 0.5, y, ew * 0.5, eh * 0.5, 0, 0, Math.PI * 2);
+    ctx.ellipse(px, py, ew * 0.5, eh * 0.5, -0.4, 0, Math.PI * 2);
     ctx.fill();
   };
-  pill(left);
-  pill(left + ew + gap);
+  pill(x + r * 0.05, y - r * 0.08);
+  pill(x + r * 0.05 + ew + gap, y - r * 0.28);
   ctx.restore();
 }
 
