@@ -9,6 +9,16 @@ const STREET0 = -1370;
 const AVENUE_STEP = 270;
 const STREET_STEP = 80;
 
+// Points around a drop where the roach can stand, nearest first, outside the drawing.
+export function standOffsets(yaw, reach) {
+  const out = [];
+  for (let i = 0; i < 16; i++) {
+    const angle = yaw + i * Math.PI / 8;
+    out.push([Math.sin(angle) * reach, Math.cos(angle) * reach]);
+  }
+  return out;
+}
+
 export function landingFor(id) {
   const rng = rngFor(id);
   const yaw = rng() * Math.PI * 2;

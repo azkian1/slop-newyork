@@ -13,7 +13,8 @@ function load(file, imports = {}) {
 
 const size = load('js/drop-size.js');
 const { resolveDropHeight, MAX_DROP_HEIGHT, OBJECT_HEIGHTS, SIZE_CLASSES } = size;
-const { landingFor } = load('js/drop-place.js', { './drop-rng.js': load('js/drop-rng.js') });
+const place = load('js/drop-place.js', { './drop-rng.js': load('js/drop-rng.js') });
+const { landingFor, standOffsets } = place;
 const { validateDrop, xProfileUrl } = load('js/drop-schema.js', { './drop-size.js': size });
 
 test('drop heights follow the dictionary, modifiers, and the 300 m cap', () => {
@@ -40,6 +41,16 @@ test('landing spots are stable and inside the midtown grid', () => {
   assert.ok(['street', 'sidewalk', 'roof'].includes(a.surface));
 });
 
+test('a click stands beside the drawing, not on top of it', () => {
+  const offsets = standOffsets(0, 2);
+  assert.equal(offsets.length, 16);
+  for (const [ox, oz] of offsets) assert.ok(Math.hypot(ox, oz) > 1.5);
+  const source = readFileSync(join(root, 'js/drops.js'), 'utf8');
+  assert.match(source, /function teleportTo\(actor\)/);
+  assert.match(source, /roach\.teleport\(spot\.x, spot\.z, heading\)/);
+  assert.match(source, /row\.addEventListener\('click', \(\) => teleportTo\(actor\)\)/);
+});
+
 test('profile links accept an x handle and nothing else', () => {
   assert.equal(xProfileUrl('azaticus'), 'https://x.com/azaticus');
   assert.equal(xProfileUrl('@horsefan'), 'https://x.com/horsefan');
@@ -60,9 +71,12 @@ test('the four demo drops are valid and unique', () => {
     assert.ok(!/[\u0400-\u04FF]/.test(JSON.stringify(row)));
   }
   const byId = Object.fromEntries(rows.map((row) => [row.sourceId, row]));
-  assert.equal(byId['demo-piano'].author, 'azaticus');
-  assert.equal(byId['demo-piano'].height, 1.5);
+  assert.equal(byId['demo-lobster'].name, 'giant lobster lifting a barbell');
+  assert.equal(byId['demo-lobster'].height, 15);
+  assert.equal(byId['demo-davy-unicorn'].height, 2.8);
   assert.equal(byId['demo-snowman'].height, 4);
-  assert.equal(byId['demo-tank'].height, 7);
-  assert.equal(byId['demo-horse'].author, 'horsefan');
+  assert.equal(byId['demo-horse'].height, 4.6);
+  assert.equal(byId['demo-piano'], undefined);
+  assert.equal(byId['demo-tank'], undefined);
+  for (const row of rows) assert.equal(row.author, 'azaticus');
 });

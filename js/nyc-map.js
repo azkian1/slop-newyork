@@ -512,7 +512,7 @@ class NYCMapSystem {
     if (bot) {
       const x = toX(bot.x);
       const y = toY(bot.z);
-      if (Math.abs(x) < w * 0.5 && Math.abs(y) < h * 0.5) drawGrokIcon(ctx, x, y, mode === 'mini' ? 8 : 9);
+      if (Math.abs(x) < w * 0.5 && Math.abs(y) < h * 0.5) drawGrokIcon(ctx, x, y, mode === 'mini' ? 16 : 18);
     }
   }
 
