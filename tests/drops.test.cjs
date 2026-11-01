@@ -122,13 +122,12 @@ test('the four demo drops are valid and unique', () => {
   assert.equal(sources.size, 4);
   for (const row of rows) {
     const errors = validateDrop(row);
-    if (row.sourceId === 'demo-lobster') assert.ok(errors.length > 0);
-    else assert.equal(errors.join(';'), '');
+    assert.equal(errors.join(';'), '');
     assert.ok(!/[\u0400-\u04FF]/.test(JSON.stringify(row)));
   }
   const byId = Object.fromEntries(rows.map((row) => [row.sourceId, row]));
   assert.equal(byId['demo-lobster'].name, 'giant lobster lifting a barbell');
-  assert.equal(byId['demo-lobster'].height, 15);
+  assert.equal(byId['demo-lobster'].height, 9.5);
   assert.equal(byId['demo-davy-unicorn'].height, 2.8);
   assert.equal(byId['demo-snowman'].height, 4);
   assert.equal(byId['demo-horse'].height, 4.6);

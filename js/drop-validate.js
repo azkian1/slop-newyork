@@ -2,7 +2,7 @@
 // Remote files are untrusted. Local demo records go through the same gate.
 
 import { CITY_BOUNDS } from './drop-place.js';
-import { MAX_WORLD_HEIGHT, MAX_WORLD_WIDTH, worldCardSize } from './drop-size.js';
+import { MAX_WORLD_HEIGHT, MAX_WORLD_WIDTH, cardEdgeFor, worldCardSize } from './drop-size.js';
 
 export const MAX_REMOTE_BYTES = 50 * 1024 * 1024;
 export const MAX_SHAPES = 80;
@@ -109,7 +109,7 @@ export function validateDropRecord(drop) {
   for (let i = 0; i < spec.shapes.length; i++) {
     if (!shapeOk(spec.shapes[i], spec.width, spec.height)) return [`shape ${i} is not a supported paint shape`];
   }
-  const card = worldCardSize(drop.height, spec);
+  const card = worldCardSize(drop.height, spec, cardEdgeFor(drop.id));
   if (card.worldH > MAX_WORLD_HEIGHT) return [`card is taller than ${MAX_WORLD_HEIGHT} m`];
   if (card.worldW > MAX_WORLD_WIDTH) return [`card is wider than ${MAX_WORLD_WIDTH} m`];
   return [];

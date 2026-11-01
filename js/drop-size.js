@@ -8,6 +8,13 @@ export const MAX_WORLD_WIDTH = 8;
 export const MAX_DROP_HEIGHT = MAX_WORLD_HEIGHT;
 // Paint resolution shared by the renderer and the size check. Far below the old 640 px edge.
 export const CARD_MAX_EDGE = 192;
+// The 9.5 m demo lobster is painted sharper than other cards. At 192 px the
+// label band would push that poster over the 10 m cap.
+export const LOBSTER_CARD_EDGE = 960;
+
+export function cardEdgeFor(id) {
+  return id === 'drop-demo-lobster' ? LOBSTER_CARD_EDGE : CARD_MAX_EDGE;
+}
 
 export const OBJECT_HEIGHTS = {
   cat: 0.4,

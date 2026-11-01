@@ -7,7 +7,7 @@ import { paintDrop } from './drop-paint.js';
 import { buildingContact } from './controllers.js';
 import { makeBot } from './grok-bot.js';
 import { chooseStand, ejectCircle } from './drop-place.js';
-import { CARD_MAX_EDGE, worldCardSize } from './drop-size.js';
+import { cardEdgeFor, worldCardSize } from './drop-size.js';
 import { DROPS_FETCH_TIMEOUT_MS, DROPS_POLL_MS, DROPS_REMOTE_URL, pollDue } from './drops-config.js';
 import {
   acceptLocalRecords,
@@ -59,13 +59,14 @@ const LABEL_NEAR = 32;
 const OBSTACLE_NEAR = 420;
 
 function makeCard(drop) {
-  const painted = paintDrop(drop.spec, drop.author, drop.id, CARD_MAX_EDGE);
+  const edge = cardEdgeFor(drop.id);
+  const painted = paintDrop(drop.spec, drop.author, drop.id, edge);
   const tex = new THREE.CanvasTexture(painted.canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.magFilter = THREE.NearestFilter;
   tex.minFilter = THREE.NearestFilter;
   tex.generateMipmaps = false;
-  const size = worldCardSize(drop.height, drop.spec, CARD_MAX_EDGE);
+  const size = worldCardSize(drop.height, drop.spec, edge);
   const mesh = new THREE.Mesh(
     CARD_GEOMETRY,
     new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, side: THREE.DoubleSide })
@@ -188,7 +189,7 @@ export async function createDrops({ scene, cameraSystem, controllerManager, mapS
     actor.painted = null;
   }
   function addActor(drop, { prepend = false } = {}) {
-    const size = worldCardSize(drop.height, drop.spec, CARD_MAX_EDGE);
+    const size = worldCardSize(drop.height, drop.spec, cardEdgeFor(drop.id));
     const y0 = groundY(cm, drop);
     const fresh = !seen.has(drop.id);
     const actor = {
