@@ -14,7 +14,7 @@ function load(file, imports = {}) {
 const size = load('js/drop-size.js');
 const { resolveDropHeight, MAX_DROP_HEIGHT, OBJECT_HEIGHTS, SIZE_CLASSES } = size;
 const { landingFor } = load('js/drop-place.js', { './drop-rng.js': load('js/drop-rng.js') });
-const { validateDrop } = load('js/drop-schema.js', { './drop-size.js': size });
+const { validateDrop, xProfileUrl } = load('js/drop-schema.js', { './drop-size.js': size });
 
 test('drop heights follow the dictionary, modifiers, and the 300 m cap', () => {
   assert.equal(resolveDropHeight({ name: 'cat' }), OBJECT_HEIGHTS.cat);
@@ -38,6 +38,16 @@ test('landing spots are stable and inside the midtown grid', () => {
   assert.ok(a.x > -900 && a.x < 1400);
   assert.ok(a.z > -1400 && a.z < 2000);
   assert.ok(['street', 'sidewalk', 'roof'].includes(a.surface));
+});
+
+test('profile links accept an x handle and nothing else', () => {
+  assert.equal(xProfileUrl('azaticus'), 'https://x.com/azaticus');
+  assert.equal(xProfileUrl('@horsefan'), 'https://x.com/horsefan');
+  assert.equal(xProfileUrl('tank_enjoyer'), 'https://x.com/tank_enjoyer');
+  assert.equal(xProfileUrl('user_snow'), 'https://x.com/user_snow');
+  assert.equal(xProfileUrl('bad handle'), null);
+  assert.equal(xProfileUrl('a'.repeat(16)), null);
+  assert.equal(xProfileUrl(''), null);
 });
 
 test('the four demo drops are valid and unique', () => {

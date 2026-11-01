@@ -1,4 +1,5 @@
 import { GEO } from './nyc-geodata.js';
+import { drawGrokIcon, drawDropIcon } from './map-icons.js';
 import {
   ROADS,
   BLOCKS,
@@ -475,6 +476,7 @@ class NYCMapSystem {
     // Start with a waypoint at Times Square / Broadway.
     const ts = NYC_LANDMARKS.find((l) => l.id === 'timessquare') || { x: 0, z: 0 };
     this.waypoint = { x: ts.x, z: ts.z, name: 'Times Square & 42nd St' };
+    this.liveOverlay = null;
 
     // Street names measured before the web font arrived would be spaced for the fallback font: measure & draw again
     if (document.fonts) {
@@ -486,6 +488,32 @@ class NYCMapSystem {
     }
 
     this.initEvents();
+  }
+
+  setLiveOverlay(overlay) {
+    this.liveOverlay = overlay;
+  }
+
+  drawLiveOverlay(ctx, toX, toY, w, h, mode) {
+    const overlay = this.liveOverlay;
+    if (!overlay) return;
+    const drops = overlay.drops;
+    if (drops) {
+      for (let i = 0; i < drops.length; i++) {
+        const drop = drops[i];
+        const x = toX(drop.x);
+        const y = toY(drop.z);
+        if (Math.abs(x) > w * 0.5 || Math.abs(y) > h * 0.5) continue;
+        if (mode === 'dot') drawDropIcon(ctx, x, y, null, 6);
+        else drawDropIcon(ctx, x, y, drop.thumb, mode === 'mini' ? 16 : 14);
+      }
+    }
+    const bot = overlay.bot;
+    if (bot) {
+      const x = toX(bot.x);
+      const y = toY(bot.z);
+      if (Math.abs(x) < w * 0.5 && Math.abs(y) < h * 0.5) drawGrokIcon(ctx, x, y, mode === 'mini' ? 8 : 9);
+    }
   }
 
   initEvents() {
@@ -1035,6 +1063,8 @@ class NYCMapSystem {
       }
     }
 
+    this.drawLiveOverlay(ctx, toX, toY, w, h, 'mini');
+
     // GPS route to the active waypoint
     if (this.waypoint) {
       const wx = toX(this.waypoint.x);
@@ -1124,6 +1154,8 @@ class NYCMapSystem {
     v.screen(ctx);
     const toX = (wx) => v.toX(wx);
     const toY = (wz) => v.toY(wz);
+
+    this.drawLiveOverlay(ctx, toX, toY, w, h, v.s < 0.08 ? 'dot' : 'map');
 
     // GPS route on the full map
     if (this.waypoint) {

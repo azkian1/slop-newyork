@@ -10,6 +10,12 @@ export const MAX_NAME = 48;
 export const MAX_HANDLE = 32;
 const COORD_LIMIT = 400;
 
+export function xProfileUrl(author) {
+  const handle = String(author || '').trim().replace(/^@/, '');
+  if (!/^[A-Za-z0-9_]{1,15}$/.test(handle)) return null;
+  return `https://x.com/${encodeURIComponent(handle)}`;
+}
+
 export function sanitizeText(value, max) {
   return String(value || '')
     .replace(/[\u0000-\u001f<>]/g, '')

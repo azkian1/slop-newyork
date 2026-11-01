@@ -767,7 +767,7 @@ async function initApp() {
     }
 
     import('./drops.js').then(({ createDrops }) => createDrops({
-      scene, cameraSystem, controllerManager
+      scene, cameraSystem, controllerManager, mapSystem, renderer
     }).then((system) => { drops = system; })).catch((error) => console.warn('[drops]', error));
 
     if (matrixEnabled) ensureMatrix().then(() => applyMatrix(true));

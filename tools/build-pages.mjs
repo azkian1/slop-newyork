@@ -7,6 +7,9 @@ import { readFileSync, writeFileSync, readdirSync, unlinkSync, statSync } from '
 import { join } from 'node:path';
 
 const outdir = 'dist';
+for (const name of readdirSync(outdir)) {
+  if (name.endsWith('.js')) unlinkSync(join(outdir, name));
+}
 await build({
   entryPoints: { city: 'js/main.js' },
   bundle: true,
@@ -59,6 +62,11 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
   if (url.origin !== self.location.origin) return;
   if (event.request.method !== 'GET') return;
+  // drops.json changes often. Never keep a stale copy.
+  if (url.pathname.includes('/data/')) {
+    event.respondWith(fetch(event.request, { cache: 'no-store' }));
+    return;
+  }
   event.respondWith(caches.match(event.request).then((hit) => hit || fetch(event.request).then((res) => {
     if (res.ok && (url.pathname.includes('/dist/') || url.pathname.endsWith('.bin.gz'))) {
       const copy = res.clone();
