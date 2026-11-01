@@ -887,4 +887,4 @@ function createCockroach({ scene, controllerManager: cm, trafficSystem, cameraSy
   return api;
 }
 
-export { createCockroach, stepGiant, giantFootprint, roachVulnerable, resolveCurb, supportHeight, climbStep, GIANT_TIME, GIANT_SCALE, GIANT_HALF_W, GIANT_HALF_L, STEP_UP, FOOT_REACH };
+export { createCockroach, stepGiant, giantFootprint, roachVulnerable, GIANT_TIME, GIANT_SCALE, GIANT_HALF_W, GIANT_HALF_L, STEP_UP, FOOT_REACH };
