@@ -1,11 +1,9 @@
 import * as THREE from 'three/webgpu';
 import {
   Fn,
-  uniform,
   float,
   vec2,
   vec3,
-  vec4,
   floor,
   fract,
   sin,
@@ -20,32 +18,31 @@ import {
   clamp,
   length,
   normalize,
-  fwidth,
+  dot,
+  and,
   texture,
   time,
-  screenUV,
-  screenSize,
-  cameraNear,
-  cameraFar,
-  cameraViewMatrix,
-  cameraWorldMatrix,
-  cameraProjectionMatrixInverse,
-  getViewPosition,
-  projectionDepth,
-  isBackgroundDepth,
-  transformNormalByInverseViewMatrix
+  positionWorld,
+  positionView,
+  normalWorld,
+  normalView,
+  cameraPosition
 } from 'three/tsl';
 
-// World-space Matrix rain. One fullscreen pass samples the scene depth and normals,
-// so every surface (buildings, streets, cars, batched pedestrians, the roach) is covered.
-// Turning the uniform off selects the original grade, which is left unchanged.
+// Glyphs live on the surface. The grid is fixed in world space; only a wave of
+// brightness travels down each column (the film's raindrop), so the letters stay
+// glued to walls, cars and people as the camera moves.
 
 const ATLAS_COLS = 10;
 const ATLAS_ROWS = 10;
 const GLYPH_COUNT = 92;
 const CELL = 48;
+// A storey is about 3.5 m. This cell puts many columns across a facade, and a
+// raindrop takes several seconds to fall one storey.
+const CELL_W = 0.48;
+const CELL_H = 0.72;
+const TRAIL = 14;
 
-// Digits, latin capitals, and halfwidth katakana (U+FF66..U+FF9D). Mirrored when drawn.
 export function matrixGlyphChars() {
   let text = '';
   for (let code = 0x30; code <= 0x39; code++) text += String.fromCharCode(code);
@@ -59,6 +56,29 @@ export function matrixFromSearch(search) {
   return new URLSearchParams(query).get('matrix') === '1';
 }
 
+// Pixel letter used before the webfont arrives, and if it never does. Each code point
+// picks a different set of bars so columns are not all the same mark.
+function drawProceduralGlyph(ctx, code, x, y) {
+  const cols = 4;
+  const rows = 7;
+  const padX = 10;
+  const padY = 6;
+  const cw = (CELL - padX * 2) / cols;
+  const rh = (CELL - padY * 2) / rows;
+  let bits = (code * 1315423911) >>> 0;
+  ctx.fillStyle = '#fff';
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      if (bits & 1) {
+        // Mirror in x so the mark matches the flipped film glyphs.
+        const mx = cols - 1 - col;
+        ctx.fillRect(x + padX + mx * cw, y + padY + row * rh, cw - 1.5, rh - 1.5);
+      }
+      bits = (bits >>> 1) | ((bits & 1) << 15);
+    }
+  }
+}
+
 function paintGlyphAtlas(canvas, font) {
   const chars = matrixGlyphChars();
   canvas.width = ATLAS_COLS * CELL;
@@ -66,16 +86,22 @@ function paintGlyphAtlas(canvas, font) {
   const ctx = canvas.getContext('2d');
   ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = '#fff';
-  ctx.font = font;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
+  const useFont = !!font;
+  if (useFont) {
+    ctx.fillStyle = '#fff';
+    ctx.font = font;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+  }
   for (let i = 0; i < chars.length && i < ATLAS_COLS * ATLAS_ROWS; i++) {
     const col = i % ATLAS_COLS;
     const row = Math.floor(i / ATLAS_COLS);
-    // Row 0 sits on the bottom of the canvas so texture v = 0 matches it (flipY).
     const x = col * CELL;
     const y = (ATLAS_ROWS - 1 - row) * CELL;
+    if (!useFont) {
+      drawProceduralGlyph(ctx, chars.charCodeAt(i), x, y);
+      continue;
+    }
     ctx.save();
     ctx.beginPath();
     ctx.rect(x, y, CELL, CELL);
@@ -91,8 +117,8 @@ function paintGlyphAtlas(canvas, font) {
 
 function createGlyphAtlas() {
   const canvas = document.createElement('canvas');
-  const font = '500 30px "Noto Sans JP", "Hiragino Sans", "MS Gothic", sans-serif';
-  paintGlyphAtlas(canvas, font);
+  const font = '500 34px "Noto Sans JP", "Hiragino Sans", "MS Gothic", sans-serif';
+  paintGlyphAtlas(canvas, null);
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.NoColorSpace;
   tex.magFilter = THREE.NearestFilter;
@@ -108,7 +134,7 @@ function createGlyphAtlas() {
     link.rel = 'stylesheet';
     link.href = 'https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@500&text=' + encodeURIComponent(chars);
     document.head.appendChild(link);
-    document.fonts.load('500 30px "Noto Sans JP"', chars).then(() => {
+    document.fonts.load('500 34px "Noto Sans JP"', chars).then(() => {
       paintGlyphAtlas(canvas, font);
       tex.needsUpdate = true;
     }).catch(() => {});
@@ -116,76 +142,114 @@ function createGlyphAtlas() {
   return tex;
 }
 
-// Triplanar columns. Walls fall along world Y. Floors fall along world Z so the
-// street keeps a stable stream instead of swimming with the camera.
-function matrixRainColor(depthNode, normalNode, atlas) {
+function matrixSurfaceColor(atlas) {
   const cols = float(ATLAS_COLS);
   const rows = float(ATLAS_ROWS);
   const count = float(GLYPH_COUNT);
-  const colW = float(0.42);
-  const glyphH = float(0.58);
-  const trailN = float(18);
-  const speed = float(7.5);
+  const cellW = float(CELL_W);
+  const cellH = float(CELL_H);
+  const trailN = float(TRAIL);
 
-  const column = Fn(([u, v]) => {
-    const col = floor(u.div(colW));
-    const jitter = float(0.55).add(fract(sin(col.mul(12.9898)).mul(43758.5453)).mul(0.9));
-    const fall = v.div(glyphH).add(time.mul(speed).mul(jitter));
-    const row = floor(fall);
-    const cellU = fract(u.div(colW));
-    const cellV = fract(fall);
-    const seed = fract(sin(col.mul(127.1).add(row.mul(311.7))).mul(43758.5453));
+  return Fn(() => {
+    const world = positionWorld;
+    const n = normalize(normalWorld);
+    const ax = abs(n);
+    // Dominant axis: walls project onto a vertical plane (columns run on world up).
+    // Floors and ceilings project onto the ground plane.
+    const useY = and(ax.y.greaterThan(ax.x), ax.y.greaterThan(ax.z));
+    const useX = ax.x.greaterThan(ax.z);
+    const u = useY.select(world.x, useX.select(world.z, world.x));
+    const v = useY.select(world.z, world.y);
+
+    const col = floor(u.div(cellW));
+    const along = v.div(cellH);
+    const row = floor(along);
+    const cellU = fract(u.div(cellW));
+    const cellV = fract(along);
+    const colSeed = fract(sin(col.mul(127.1)).mul(43758.5453));
+    // A few columns change letters now and then. The rest stay put.
+    const cycling = colSeed.greaterThan(0.84);
+    const tick = floor(time.mul(0.22).add(colSeed.mul(5.0)));
+    const cycle = cycling.select(tick, float(0));
+    const seed = fract(sin(col.mul(19.13).add(row.mul(47.77)).add(cycle.mul(13.17))).mul(43758.5453));
     const id = min(floor(seed.mul(count)), count.sub(1));
     const gx = mod(id, cols);
     const gy = floor(id.div(cols));
     const tuv = vec2(gx.add(cellU).div(cols), gy.add(cellV).div(rows));
-    const mask = texture(atlas, tuv).r;
-    const dist = fract(fall.div(trailN));
-    const trail = pow(max(float(1).sub(dist), float(0.0001)), float(1.7));
-    const lead = smoothstep(float(1).div(trailN), float(0), dist);
-    const alive = step(float(0.12), fract(sin(col.mul(78.233)).mul(12345.678)));
-    const body = vec3(0.0, 0.62, 0.16).mul(trail);
-    const head = vec3(0.82, 1.0, 0.88).mul(lead);
-    const glyph = body.add(head).mul(mask).mul(alive);
-    const streak = vec3(0.0, 0.28, 0.07).mul(trail).mul(alive).mul(0.4);
-    return glyph.add(streak);
-  });
+    const mask = smoothstep(float(0.4), float(0.72), texture(atlas, tuv).r);
 
-  return Fn(() => {
-    const raw = depthNode.sample(screenUV).r;
-    const depth = projectionDepth(raw, cameraNear, cameraFar);
-    const background = isBackgroundDepth(depth);
-    const viewPosition = getViewPosition(screenUV, depth, cameraProjectionMatrixInverse);
-    const world = cameraWorldMatrix.mul(vec4(viewPosition, 1.0)).xyz;
-    const nSample = normalNode.sample(screenUV).xyz;
-    const nLen = length(nSample);
-    const nView = normalize(nLen.greaterThan(0.05).select(nSample, vec3(0, 0, 1)));
-    const nWorld = normalize(transformNormalByInverseViewMatrix(nView, cameraViewMatrix));
-    const weight = nWorld.abs();
-    const weightSum = max(weight.x.add(weight.y).add(weight.z), float(0.0001));
-    // X walls use Z/Y, Z walls use X/Y, floors use X/Z.
-    const rain = column(world.z, world.y).mul(weight.x)
-      .add(column(world.x, world.z).mul(weight.y))
-      .add(column(world.x, world.y).mul(weight.z))
-      .div(weightSum);
-    const edge = smoothstep(float(0.0), float(0.02), fwidth(depth));
-    const fres = pow(clamp(float(1).sub(abs(nView.z)), float(0), float(1)), float(1.6));
-    const rim = vec3(0.25, 1.0, 0.55).mul(max(edge, fres.mul(0.5)).mul(0.6));
-    const glow = fwidth(rain).mul(0.7);
-    const lit = rain.add(glow).add(rim);
-    const dist = length(viewPosition);
-    const fog = smoothstep(float(36), float(240), dist);
-    const fogged = mix(lit, vec3(0), fog);
-    const aspect = screenSize.x.div(screenSize.y);
-    const radius = length(screenUV.sub(0.5).mul(vec2(aspect, 1))).div(length(vec2(aspect, 1).mul(0.5)));
-    const vig = float(1).sub(smoothstep(float(0.4), float(1.2), radius).mul(0.5));
-    return background.select(vec3(0), fogged.mul(vig));
+    // Illumination travels down the column. The glyph grid itself does not scroll.
+    const speed = float(0.42).add(colSeed.mul(0.38));
+    const head = time.mul(speed).add(colSeed.mul(trailN));
+    const dist = fract(along.add(head).div(trailN));
+    const trail = pow(max(float(1).sub(dist), float(0.0001)), float(2.2));
+    const lead = smoothstep(float(1.15).div(trailN), float(0.0), dist);
+    const alive = step(float(0.06), colSeed);
+    const body = vec3(0.0, 0.72, 0.18).mul(trail);
+    const tracer = vec3(1.7, 2.5, 1.85).mul(lead);
+    const glyph = body.add(tracer).mul(mask).mul(alive);
+
+    const facing = normalize(positionView).negate();
+    const ndotv = clamp(dot(normalize(normalView), facing), float(0), float(1));
+    const fres = pow(float(1).sub(ndotv), float(2.8));
+    const edge = vec3(0.015, 0.16, 0.05).mul(fres);
+    const lit = glyph.add(edge);
+    const distCam = length(world.sub(cameraPosition));
+    const fog = smoothstep(float(55), float(320), distCam);
+    return mix(lit, vec3(0), fog);
   })();
 }
 
-export function createMatrixMode(depthNode, normalNode) {
+export function createMatrixMode() {
   const atlas = createGlyphAtlas();
-  const color = matrixRainColor(depthNode, normalNode, atlas);
-  const enabled = uniform(0);
-  return { color, enabled, atlas };
+  const material = new THREE.MeshBasicNodeMaterial();
+  material.name = 'MatrixRain';
+  material.colorNode = matrixSurfaceColor(atlas);
+  material.fog = false;
+  material.toneMapped = false;
+  material.side = THREE.DoubleSide;
+  material.forceSinglePass = true;
+
+  const saved = new Map();
+  let active = false;
+  let clearColor = null;
+  let clearAlpha = 1;
+
+  function setEnabled(scene, sky, renderer, on) {
+    if (on === active) return;
+    active = on;
+    if (on) {
+      clearColor = new THREE.Color();
+      if (renderer.getClearColor) renderer.getClearColor(clearColor);
+      clearAlpha = renderer.getClearAlpha ? renderer.getClearAlpha() : 1;
+      if (renderer.setClearColor) renderer.setClearColor(0x000000, 1);
+      scene.traverse((obj) => {
+        if (obj === sky) {
+          saved.set(obj, { visible: obj.visible });
+          obj.visible = false;
+          return;
+        }
+        if (obj.isMesh) {
+          if (obj.material === material) return;
+          saved.set(obj, { material: obj.material });
+          obj.material = material;
+          return;
+        }
+        if (obj.isSprite || obj.isPoints || obj.isLine || obj.isLineSegments) {
+          saved.set(obj, { visible: obj.visible });
+          obj.visible = false;
+        }
+      });
+      return;
+    }
+    for (const [obj, rec] of saved) {
+      if (rec.material !== undefined) obj.material = rec.material;
+      if (rec.visible !== undefined) obj.visible = rec.visible;
+    }
+    saved.clear();
+    if (clearColor && renderer.setClearColor) renderer.setClearColor(clearColor, clearAlpha);
+    clearColor = null;
+  }
+
+  return { setEnabled, material, atlas };
 }

@@ -29,7 +29,7 @@ const LOOKS = {
   midnight: { exposure: 1.04, contrast: 1.08, saturation: 1.06, balance: [0.985, 1.00, 1.035], bloom: 0.30, threshold: 1.00 }
 };
 
-function createPostProcessing(renderer, sceneColor, reflections, matrix = null) {
+function createPostProcessing(renderer, sceneColor, reflections) {
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   // Exposure is applied before bloom so its threshold follows the image's exposed brightness.
   // RenderPipeline performs ACES and the output color-space conversion exactly once, after this graph.
@@ -69,26 +69,39 @@ function createPostProcessing(renderer, sceneColor, reflections, matrix = null) 
     const aspect = screenSize.x.div(screenSize.y);
     const radius = length(screenUV.sub(0.5).mul(vec2(aspect, 1))).div(length(vec2(aspect, 1).mul(0.5)));
     const vignette = float(1).sub(smoothstep(0.35, 1.0, radius).mul(0.12));
-    const graded = vec4(color.mul(vignette), 1.0);
-    // Matrix is a separate image. When the uniform is off, the grade above is what is returned.
-    if (!matrix) return graded;
-    return matrix.enabled.greaterThan(0.5).select(vec4(matrix.color, 1.0), graded);
+    return vec4(color.mul(vignette), 1.0);
   })();
 
+  let lookId = 'golden';
+  let matrixOn = false;
+
   function applyPreset(id) {
-    const look = LOOKS[id] || LOOKS.golden;
+    lookId = id || lookId;
+    const look = LOOKS[lookId] || LOOKS.golden;
     exposure.value = look.exposure;
     contrast.value = look.contrast;
     saturation.value = look.saturation;
     balance.value.set(...look.balance);
-    bloomPass.strength.value = look.bloom;
-    bloomPass.threshold.value = look.threshold;
+    if (!matrixOn) {
+      bloomPass.strength.value = look.bloom;
+      bloomPass.threshold.value = look.threshold;
+      bloomPass.smoothWidth.value = 0.30;
+    }
   }
 
   applyPreset('golden');
 
+  // Glyph heads are HDR. While Matrix mode is on, bloom catches those tracers.
+  // The grade itself is unchanged, so turning the mode off restores the preset look.
   function setMatrix(on) {
-    if (matrix) matrix.enabled.value = on ? 1 : 0;
+    matrixOn = !!on;
+    if (matrixOn) {
+      bloomPass.strength.value = 0.7;
+      bloomPass.threshold.value = 0.65;
+      bloomPass.smoothWidth.value = 0.4;
+    } else {
+      applyPreset(lookId);
+    }
   }
 
   return { outputNode, applyPreset, setMatrix };

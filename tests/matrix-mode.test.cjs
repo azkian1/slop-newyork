@@ -36,13 +36,18 @@ test('matrix=1 in the query turns the mode on', () => {
   assert.equal(matrixFromSearch(''), false);
 });
 
-test('M toggles matrix and the grade stays a separate branch', () => {
+test('M swaps mesh materials for a world-space glyph shader', () => {
   const main = readFileSync(join(root, 'js/main.js'), 'utf8');
+  const mode = readFileSync(join(root, 'js/matrix-mode.js'), 'utf8');
   const grade = readFileSync(join(root, 'js/post-processing.js'), 'utf8');
   const html = readFileSync(join(root, 'index.html'), 'utf8');
   assert.match(main, /case 'KeyM'/);
   assert.match(main, /matrixFromSearch\(location\.search\)/);
   assert.match(main, /\['M'\], 'Matrix'/);
-  assert.match(grade, /matrix\.enabled\.greaterThan\(0\.5\)\.select/);
+  assert.match(main, /matrixMode\.setEnabled\(scene/);
+  assert.match(mode, /positionWorld/);
+  assert.match(mode, /normalWorld/);
+  assert.match(mode, /MeshBasicNodeMaterial/);
+  assert.doesNotMatch(grade, /matrix\.enabled/);
   assert.match(html, /js\/matrix-mode\.js/);
 });

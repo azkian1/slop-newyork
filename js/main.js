@@ -248,15 +248,28 @@ async function initApp() {
   // Roughness mip blur must not spread reflections back onto matte or nonreflective surfaces.
   const reflectionMask = scenePassMetalRough.r.greaterThan(0).select(smoothstep(maxSSRRoughness, 0.55, scenePassMetalRough.g), 0);
   const reflections = ssrPass.mul(reflectionMask);
-  const matrixMode = createMatrixMode(scenePassDepth, scenePassNormal);
-  const colorGrade = createPostProcessing(renderer, scenePassColor, reflections, matrixMode);
+  const matrixMode = createMatrixMode();
+  const colorGrade = createPostProcessing(renderer, scenePassColor, reflections);
   let matrixEnabled = matrixFromSearch(location.search);
   const applyMatrix = (on) => {
     matrixEnabled = on;
+    matrixMode.setEnabled(scene, lightingSystem.sky, renderer, on);
     colorGrade.setMatrix(on);
+    ssrPass.intensity.value = on ? 0 : 0.50;
     document.body.classList.toggle('matrix-mode', on);
   };
   applyMatrix(matrixEnabled);
+  // Still frames for headless checks (?matrix=1&shot=1). Not used by the live toggle.
+  if (new URLSearchParams(location.search).get('shot') === '1') {
+    window.__aim = (x, y, z, lx, ly, lz) => {
+      cameraSystem.activePresetId = 'fifthAve';
+      cameraSystem.update = () => {
+        cameraSystem.camera.position.set(x, y, z);
+        cameraSystem.camera.lookAt(lx, ly, lz);
+      };
+      cameraSystem.update();
+    };
+  }
   const renderPipeline = new THREE.RenderPipeline(renderer, colorGrade.outputNode);
 
   // 6. Wire UI Controls (Strictly using safe DOM APIs: textContent, classList, addEventListener)
