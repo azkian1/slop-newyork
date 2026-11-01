@@ -20,6 +20,7 @@ import { NYCMapSystem } from './nyc-map.js';
 import { setupSceneCulling, updateSceneCulling } from './scene-culling.js';
 import { CityAudioSystem } from './audio-system.js';
 import { createCockroach } from './cockroach.js';
+import { createMatrixMode, matrixFromSearch } from './matrix-mode.js';
 
 // Application setup, shader warm-up and frame loop.
 
@@ -247,7 +248,15 @@ async function initApp() {
   // Roughness mip blur must not spread reflections back onto matte or nonreflective surfaces.
   const reflectionMask = scenePassMetalRough.r.greaterThan(0).select(smoothstep(maxSSRRoughness, 0.55, scenePassMetalRough.g), 0);
   const reflections = ssrPass.mul(reflectionMask);
-  const colorGrade = createPostProcessing(renderer, scenePassColor, reflections);
+  const matrixMode = createMatrixMode(scenePassDepth, scenePassNormal);
+  const colorGrade = createPostProcessing(renderer, scenePassColor, reflections, matrixMode);
+  let matrixEnabled = matrixFromSearch(location.search);
+  const applyMatrix = (on) => {
+    matrixEnabled = on;
+    colorGrade.setMatrix(on);
+    document.body.classList.toggle('matrix-mode', on);
+  };
+  applyMatrix(matrixEnabled);
   const renderPipeline = new THREE.RenderPipeline(renderer, colorGrade.outputNode);
 
   // 6. Wire UI Controls (Strictly using safe DOM APIs: textContent, classList, addEventListener)
@@ -279,7 +288,7 @@ async function initApp() {
 
   // Keyboard guide for each mode: [keys, action]
   const controlHints = {
-    person: [[['W', 'S'], 'Crawl / Climb'], [['A', 'D'], 'Turn'], [['Space'], 'Jump / Let go']],
+    person: [[['W', 'S'], 'Crawl / Climb'], [['A', 'D'], 'Turn'], [['Space'], 'Jump / Let go'], [['M'], 'Matrix']],
     car: [[['W', 'S'], 'Drive / Reverse'], [['A', 'D'], 'Steer'], [['B'], 'Horn'], [['Drag'], 'Orbit']],
     cyclist: [[['W', 'S'], 'Pedal / Brake'], [['A', 'D'], 'Lean & Turn'], [['Drag'], 'Orbit']],
     helicopter: [[['W', 'S'], 'Pitch'], [['A', 'D'], 'Yaw'], [['Space', 'E'], 'Ascend'], [['Q', 'C'], 'Descend']]
@@ -567,6 +576,11 @@ async function initApp() {
         break;
       case 'KeyH':
         if (hudToggleBtn) hudToggleBtn.click();
+        break;
+      case 'KeyM':
+        if (!e.repeat && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && !mapSystem.isFullMapOpen) {
+          applyMatrix(!matrixEnabled);
+        }
         break;
       case 'KeyN':
         if (!e.repeat && !e.metaKey && !e.ctrlKey && !e.altKey) audioSystem.setEnabled(!audioSystem.enabled);

@@ -29,7 +29,7 @@ const LOOKS = {
   midnight: { exposure: 1.04, contrast: 1.08, saturation: 1.06, balance: [0.985, 1.00, 1.035], bloom: 0.30, threshold: 1.00 }
 };
 
-function createPostProcessing(renderer, sceneColor, reflections) {
+function createPostProcessing(renderer, sceneColor, reflections, matrix = null) {
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   // Exposure is applied before bloom so its threshold follows the image's exposed brightness.
   // RenderPipeline performs ACES and the output color-space conversion exactly once, after this graph.
@@ -69,7 +69,10 @@ function createPostProcessing(renderer, sceneColor, reflections) {
     const aspect = screenSize.x.div(screenSize.y);
     const radius = length(screenUV.sub(0.5).mul(vec2(aspect, 1))).div(length(vec2(aspect, 1).mul(0.5)));
     const vignette = float(1).sub(smoothstep(0.35, 1.0, radius).mul(0.12));
-    return vec4(color.mul(vignette), 1.0);
+    const graded = vec4(color.mul(vignette), 1.0);
+    // Matrix is a separate image. When the uniform is off, the grade above is what is returned.
+    if (!matrix) return graded;
+    return matrix.enabled.greaterThan(0.5).select(vec4(matrix.color, 1.0), graded);
   })();
 
   function applyPreset(id) {
@@ -83,7 +86,12 @@ function createPostProcessing(renderer, sceneColor, reflections) {
   }
 
   applyPreset('golden');
-  return { outputNode, applyPreset };
+
+  function setMatrix(on) {
+    if (matrix) matrix.enabled.value = on ? 1 : 0;
+  }
+
+  return { outputNode, applyPreset, setMatrix };
 }
 
 export { createPostProcessing };

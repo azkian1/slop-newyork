@@ -543,7 +543,8 @@ class NYCMapSystem {
     window.addEventListener('keydown', (e) => {
       if (e.code === 'Escape' && this.isFullMapOpen) {
         this.toggleFullMap(false);
-      } else if (e.code === 'KeyM' && !isTypingInField(e)) {
+      } else if (e.code === 'KeyM' && e.shiftKey && !e.repeat && !e.metaKey && !e.ctrlKey && !e.altKey && !isTypingInField(e)) {
+        // Bare M is Matrix mode (main.js). Shift+M still opens the street map.
         this.toggleFullMap(!this.isFullMapOpen);
       }
     });
@@ -1085,7 +1086,7 @@ class NYCMapSystem {
   }
 
   // =========================================================================
-  // 2. FULL NEW YORK CITY INTERACTIVE STREET MAP MODAL ([M])
+  // 2. FULL NEW YORK CITY INTERACTIVE STREET MAP MODAL ([Shift+M])
   // =========================================================================
   renderFullMap() {
     if (!this.fullCtx || !this.fullCanvas || !this.isFullMapOpen) return;

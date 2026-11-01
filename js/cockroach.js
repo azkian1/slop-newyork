@@ -609,7 +609,7 @@ function createCockroach({ scene, controllerManager: cm, trafficSystem, cameraSy
   const hud = document.createElement('div');
   hud.id = 'roach-hud';
   hud.style.cssText = 'position:fixed;left:16px;top:84px;z-index:50;font:600 14px/1.45 system-ui,sans-serif;color:#fff;'
-    + 'background:rgba(20,10,4,.72);padding:10px 14px;border-radius:12px;pointer-events:none;max-width:340px';
+    + 'background:rgba(20,10,4,.72);padding:10px 14px;border-radius:12px;pointer-events:none;max-width:480px';
   document.body.appendChild(hud);
   let hudTimer = 0;
   function updateHud(dt) {
@@ -622,7 +622,8 @@ function createCockroach({ scene, controllerManager: cm, trafficSystem, cameraSy
         : (st.giant > 0 && st.boost > 0) ? `GIANT ROACH ${Math.ceil(st.giant)} s · CRUMB SPEED ${Math.ceil(st.boost)} s`
         : st.giant > 0 ? `GIANT ROACH ${Math.ceil(st.giant)} s`
         : (st.boost > 0 ? `CRUMB SPEED ${Math.ceil(st.boost)} s` : `status: ${st.lastEvent || 'scuttling'}`),
-      'W/S crawl & climb · A/D turn · Space jump / let go'
+      'W/S crawl & climb · A/D turn · Space jump / let go · M matrix'
+        + (document.body.classList.contains('matrix-mode') ? ' (on)' : '')
     ];
     hud.textContent = '';
     lines.forEach((t, i) => { const d = document.createElement('div'); d.textContent = t; if (i === 2) d.style.cssText = 'font-weight:400;opacity:.8;font-size:12px'; hud.appendChild(d); });
