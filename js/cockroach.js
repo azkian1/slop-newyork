@@ -3,6 +3,7 @@ import { BODY_SPECS } from './cars.js';
 import { BUS_SPEC } from './bus.js';
 import { buildingContact, collisionBody } from './controllers.js';
 import { deckHeightAt } from './city-grid.js';
+import { ORBIT_PITCH_MAX, ORBIT_PITCH_MIN } from './cameras.js';
 
 // SLOP COCKROACH: the player is a 4 cm cockroach. Climbs anything by cheating, dies only from below.
 
@@ -742,11 +743,12 @@ function createCockroach({ scene, controllerManager: cm, trafficSystem, cameraSy
   };
 
   // Low camera, slightly behind; rotates onto walls with the roach.
-  // Dragging orbits that camera around the roach. Pitch stays inside the chase clamps,
-  // and the camera is never allowed under the surface the roach is standing on.
+  // Dragging orbits that camera around the roach. Pitch runs from nearly overhead
+  // (looking down) to nearly straight up, and stops 5 degrees short of flipping.
+  // A low pitch keeps the camera above the roof, road, or sidewalk under it.
   function orbitAround(pos, want, wantLook) {
     const yaw = cameraSystem.orbitYawOffset || 0;
-    const pitch = Math.max(-0.32, Math.min(0.68, cameraSystem.orbitPitchOffset || 0));
+    const pitch = Math.max(ORBIT_PITCH_MIN, Math.min(ORBIT_PITCH_MAX, cameraSystem.orbitPitchOffset || 0));
     if (Math.abs(yaw) < 1e-4 && Math.abs(pitch - 0.09) < 1e-3) return;
     const dx = want.x - pos.x;
     const dy = want.y - pos.y;
@@ -756,17 +758,32 @@ function createCockroach({ scene, controllerManager: cm, trafficSystem, cameraSy
     const rx = dx * c + dz * s;
     const rz = -dx * s + dz * c;
     const horiz = Math.hypot(rx, rz);
-    const span = Math.hypot(horiz, dy);
-    const base = Math.atan2(dy, Math.max(horiz, 1e-4));
-    const next = Math.max(-0.15, Math.min(1.2, base + (pitch - 0.09)));
-    const reach = Math.cos(next) * span;
-    const dirx = horiz > 1e-4 ? rx / horiz : 0;
-    const dirz = horiz > 1e-4 ? rz / horiz : 1;
-    want.set(pos.x + dirx * reach, pos.y + Math.sin(next) * span, pos.z + dirz * reach);
+    if (horiz < 1e-4) return;
+    const base = Math.atan2(dy, horiz);
+    const view = Math.max(ORBIT_PITCH_MIN, Math.min(ORBIT_PITCH_MAX, base + (pitch - 0.09)));
+    const delta = view - base;
+    const fx = rx / horiz;
+    const fz = rz / horiz;
+    const rightX = fz;
+    const rightZ = -fx;
+    const turn = (x, y, z) => {
+      const along = x * fx + z * fz;
+      const side = x * rightX + z * rightZ;
+      const cs = Math.cos(delta);
+      const sn = Math.sin(delta);
+      const along2 = along * cs - y * sn;
+      const up2 = along * sn + y * cs;
+      return [rightX * side + fx * along2, up2, rightZ * side + fz * along2];
+    };
+    const cam = turn(rx, dy, rz);
+    want.set(pos.x + cam[0], pos.y + cam[1], pos.z + cam[2]);
+    const floorY = surfaceAt(want.x, want.z, pos.y + 1) + 0.04 * st.scale;
+    if (want.y < floorY) want.y = floorY;
     const lx = wantLook.x - pos.x;
+    const ly = wantLook.y - pos.y;
     const lz = wantLook.z - pos.z;
-    wantLook.x = pos.x + lx * c + lz * s;
-    wantLook.z = pos.z + -lx * s + lz * c;
+    const look = turn(lx * c + lz * s, ly, -lx * s + lz * c);
+    wantLook.set(pos.x + look[0], pos.y + look[1], pos.z + look[2]);
   }
   cameraSystem.camera.near = 0.01;
   cameraSystem.camera.updateProjectionMatrix();
@@ -814,7 +831,7 @@ function createCockroach({ scene, controllerManager: cm, trafficSystem, cameraSy
     if (st.mode === 'dead') { want.set(pos.x, pos.y + 0.35 * sc, pos.z - 0.05 * sc); wantLook.copy(pos); }
     if (st.aim && st.mode !== 'dead') wantLook.set(st.aim.x, st.aim.y, st.aim.z);
     else if (st.mode !== 'dead' && st.orbit == null) orbitAround(pos, want, wantLook);
-    const floorY = pos.y + 0.03 * sc;
+    const floorY = surfaceAt(want.x, want.z, pos.y + 1) + 0.03 * sc;
     if (want.y < floorY) want.y = floorY;
     const k = camInit && st.orbit == null ? 1 - Math.exp(-dt * 10) : 1;
     camInit = true;
@@ -822,7 +839,8 @@ function createCockroach({ scene, controllerManager: cm, trafficSystem, cameraSy
     camLook.lerp(wantLook, k);
     // Collision: never let the (smoothed) camera end up inside a building, roof, car or under the street
     resolveCamera(origin, camPos);
-    if (camPos.y < pos.y + 0.03 * sc) camPos.y = pos.y + 0.03 * sc;
+    const landed = surfaceAt(camPos.x, camPos.z, Math.max(pos.y, camPos.y) + 1) + 0.03 * sc;
+    if (camPos.y < landed) camPos.y = landed;
     cameraSystem.camera.position.copy(camPos);
     cameraSystem.camera.lookAt(camLook);
     cameraSystem.currentPos.copy(camPos);

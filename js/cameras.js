@@ -3,6 +3,15 @@ import { bryantParkLawn } from './landmarks.js';
 
 // Chase, action, cockpit, fixed-location and aerial cameras, with mouse/touch orbit and zoom.
 
+// About 85 degrees above and below level: steep enough to look down at the roach or up at the sky,
+// and 5 degrees short of vertical so the orbit cannot flip.
+export const ORBIT_PITCH_MAX = 85 * Math.PI / 180;
+export const ORBIT_PITCH_MIN = -ORBIT_PITCH_MAX;
+
+function clampOrbitPitch(pitch) {
+  return Math.max(ORBIT_PITCH_MIN, Math.min(ORBIT_PITCH_MAX, pitch));
+}
+
 const CAMERA_PRESETS = [
   { id: 'chase',       name: '3rd-Person Chase',         category: 'follow', fov: 56 },
   { id: 'action',      name: 'Low-Angle Action',         category: 'follow', fov: 60 },
@@ -91,7 +100,7 @@ class CameraSystem {
         pointer.moved += Math.hypot(dx, dy);
         if (pointer.moved > 6) {
           this.orbitYawOffset -= pointer.accX * 0.0065;
-          this.orbitPitchOffset = Math.max(-0.32, Math.min(0.68, this.orbitPitchOffset + pointer.accY * 0.005));
+          this.orbitPitchOffset = clampOrbitPitch(this.orbitPitchOffset + pointer.accY * 0.005);
           pointer.accX = 0;
           pointer.accY = 0;
           this.userOrbitTimer = 4.0;
@@ -140,7 +149,7 @@ class CameraSystem {
     if (this.activePresetId !== 'chase') zoom = 0;
     if (!lookX && !lookY && !zoom) return;
     this.orbitYawOffset -= lookX * 2.0 * dt;
-    this.orbitPitchOffset = Math.max(-0.32, Math.min(0.68, this.orbitPitchOffset + lookY * 1.25 * dt));
+    this.orbitPitchOffset = clampOrbitPitch(this.orbitPitchOffset + lookY * 1.25 * dt);
     this.zoomMultiplier = Math.max(0.45, Math.min(2.4, this.zoomMultiplier + zoom * 0.9 * dt));
     this.userOrbitTimer = 4.0;
   }

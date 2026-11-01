@@ -199,6 +199,22 @@ test('a moving roach keeps the orbit a moving car releases', () => {
   close(roach.camera.orbitYawOffset, -0.065);
 });
 
+test('pitch reaches about 85 degrees up or down and stops short of flipping', () => {
+  const h = cameraHarness();
+  const { ORBIT_PITCH_MIN, ORBIT_PITCH_MAX } = loadModule(source, {
+    globals: { window: h.window, document: h.document },
+    imports: { 'three/webgpu': { Vector3, PerspectiveCamera }, './landmarks.js': {} }
+  });
+  h.pointer(h.canvas, 'pointerdown', 1, 0, 0, 'mouse');
+  h.pointer(h.canvas, 'pointermove', 1, 0, 800, 'mouse');
+  close(h.camera.orbitPitchOffset, ORBIT_PITCH_MAX);
+  assert.ok(ORBIT_PITCH_MAX < Math.PI / 2 - 0.05);
+  h.pointer(h.canvas, 'pointermove', 1, 0, -800, 'mouse');
+  close(h.camera.orbitPitchOffset, ORBIT_PITCH_MIN);
+  assert.ok(ORBIT_PITCH_MIN > -Math.PI / 2 + 0.05);
+  h.pointer(h.canvas, 'pointerup', 1, 0, -800, 'mouse');
+});
+
 test('mouse orbit and wheel zoom retain their behavior and bounds', () => {
   const h = cameraHarness();
   h.pointer(h.canvas, 'pointerdown', 1, 0, 0, 'mouse', 2);

@@ -18,7 +18,8 @@ const {
       buildingContact() { return false; },
       collisionBody() { return {}; }
     },
-    './city-grid.js': { deckHeightAt() { return 0; } }
+    './city-grid.js': { deckHeightAt() { return 0; } },
+    './cameras.js': { ORBIT_PITCH_MIN: -85 * Math.PI / 180, ORBIT_PITCH_MAX: 85 * Math.PI / 180 }
   }
 });
 
