@@ -1,4 +1,4 @@
-const CACHE = 'slop-ny-ed24891f0f-pills2';
+const CACHE = 'slop-ny-ed24891f0f-pills3';
 const FILES = ["./dist/city-ed24891f0f.js","./js/building-geodata.bin.gz","./js/tree-geodata.bin.gz","./assets/ui/pill-red.png?v=2","./assets/ui/pill-blue.png?v=2","./assets/ui/avatar-roach.png","./assets/ui/avatar-rat.png","./dist/part-2DKW5JFN.js","./dist/part-5FHELVQX.js","./dist/part-APXUDIYS.js","./dist/part-HYZ3WC7W.js","./dist/part-JWV234YZ.js","./dist/part-K7TJC2CO.js","./dist/part-O4WC5KQW.js","./dist/part-PH6WOWCI.js","./dist/part-RMIFO4CX.js","./dist/part-XKQIZPQY.js"];
 self.addEventListener('install', (event) => {
   event.waitUntil((async () => {

@@ -1547,14 +1547,15 @@ body.matrix-mode .drop-log { border-color: #1f8f3a; }
 }
 .matrix-pills {
   display: flex;
-  gap: 12px;
+  gap: 14px;
   align-items: center;
+  margin-bottom: 6px;
   pointer-events: auto;
 }
 .matrix-pill {
   position: relative;
-  width: 76px;
-  height: 36px;
+  width: 100px;
+  height: 52px;
   margin: 0;
   padding: 0;
   border: 0;
@@ -1564,31 +1565,20 @@ body.matrix-mode .drop-log { border-color: #1f8f3a; }
   overflow: visible;
 }
 .matrix-pill img {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 120px;
-  max-width: none;
-  height: auto;
-  transform: translate(-50%, -52%);
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
   pointer-events: none;
-  transition: transform 0.16s var(--ease-out), filter 0.16s ease;
+  transition: filter 0.16s ease, opacity 0.16s ease;
 }
-.matrix-pill:hover img {
-  transform: translate(-50%, calc(-52% - 3px));
-  filter: brightness(1.12);
-}
-.matrix-pill.is-dim {
-  opacity: 0.38;
-}
-.matrix-pill.is-dim:hover img {
-  transform: none;
-  filter: none;
-}
+.matrix-pill:hover img { filter: brightness(1.12); }
+.matrix-pill.is-dim { opacity: 0.38; }
+.matrix-pill.is-dim img { filter: saturate(0.6); }
+.matrix-pill.is-dim:hover img { filter: saturate(0.6); }
 @media (max-width: 640px) {
   .matrix-pills { gap: 10px; }
-  .matrix-pill { width: 64px; height: 30px; }
-  .matrix-pill img { width: 102px; }
+  .matrix-pill { width: 80px; height: 42px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
