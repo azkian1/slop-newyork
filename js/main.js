@@ -784,6 +784,9 @@ async function initApp() {
         location.reload();
       });
       navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).then((reg) => {
+        const wake = (worker) => { if (worker) worker.postMessage({ type: 'skip-waiting' }); };
+        wake(reg.waiting);
+        reg.addEventListener('updatefound', () => wake(reg.installing));
         reg.update().catch(() => {});
       }).catch(() => {});
     }

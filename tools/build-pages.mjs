@@ -50,7 +50,7 @@ const precache = [`./dist/${hashed}`, './js/building-geodata.bin.gz', './js/tree
 for (const name of readdirSync(outdir)) {
   if (name.startsWith('part-') && name.endsWith('.js')) precache.push(`./dist/${name}`);
 }
-const sw = `const CACHE = 'slop-${hash}';
+const sw = `const CACHE = 'slop-ny-${hash}';
 const FILES = ${JSON.stringify(precache)};
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(FILES)).then(() => self.skipWaiting()));
@@ -61,6 +61,9 @@ self.addEventListener('activate', (event) => {
     await Promise.all(keys.filter((key) => key !== CACHE).map((key) => caches.delete(key)));
     await self.clients.claim();
   })());
+});
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'skip-waiting') self.skipWaiting();
 });
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);

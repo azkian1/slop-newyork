@@ -61,7 +61,7 @@ const RAT_JUMP_HEIGHT = 0.7;
 const RAT_JUMP_VY = Math.sqrt(2 * 9.8 * RAT_JUMP_HEIGHT);
 const RAT_BODY_M = 0.25;
 const RAT_STEP = 0.1; // below a 0.22 m curb, so the rat has to jump onto the sidewalk
-const SKIN_KEY = 'slop-skin';
+const SKIN_KEY = 'slop-player-skin';
 
 function carLedges(roof) {
   const bumper = Math.min(0.4, roof * 0.32);
@@ -334,8 +334,11 @@ function createCockroach({ scene, controllerManager: cm, trafficSystem, cameraSy
   let ratApi = null;
   let ratUnit = 1;
   let ratClip = 'idle';
-  let skinId = 'roach';
-  try { if (localStorage.getItem(SKIN_KEY) === 'rat') skinId = 'rat'; } catch { /* storage off */ }
+  let skinId = 'rat';
+  try {
+    const saved = localStorage.getItem(SKIN_KEY);
+    if (saved === 'roach' || saved === 'rat') skinId = saved;
+  } catch { /* storage off */ }
   const st = {
     mode: 'ground', vy: 0, boost: 0, giant: 0, scale: 1, deaths: 0, eaten: 0, redEaten: 0, deadTimer: 0, legPhase: 0,
     wall: null, ped: null, car: null, spawn: p.position.clone(), lastSafe: p.position.clone(), lastEvent: ''
@@ -988,7 +991,7 @@ function createCockroach({ scene, controllerManager: cm, trafficSystem, cameraSy
     img.alt = '';
     img.src = new URL(id === 'rat' ? 'assets/ui/avatar-rat.png' : 'assets/ui/avatar-roach.png', document.baseURI).href;
     button.appendChild(img);
-    button.addEventListener('click', () => setSkin(id));
+    button.addEventListener('click', () => setSkin(id, true));
     picker.appendChild(button);
     return button;
   }
@@ -1003,10 +1006,12 @@ function createCockroach({ scene, controllerManager: cm, trafficSystem, cameraSy
       button.setAttribute('aria-pressed', String(on));
     }
   }
-  function setSkin(id) {
+  function setSkin(id, store) {
     if (id === 'rat' && !ratApi) return;
     skinId = id === 'rat' ? 'rat' : 'roach';
-    try { localStorage.setItem(SKIN_KEY, skinId); } catch { /* storage off */ }
+    if (store) {
+      try { localStorage.setItem(SKIN_KEY, skinId); } catch { /* storage off */ }
+    }
     if (!playingRat() && (st.mode === 'wall' || st.mode === 'ped')) {
       /* cockroach keeps its climb */
     }
@@ -1043,7 +1048,7 @@ function createCockroach({ scene, controllerManager: cm, trafficSystem, cameraSy
       ratHolder.add(ratApi.root);
       ratApi.reset('idle');
       ratClip = 'idle';
-      if (skinId === 'rat') setSkin('rat');
+      if (skinId === 'rat') setSkin('rat', false);
       else markSkin();
     }, undefined, (err) => { window.__ratError = String(err && err.message ? err.message : err); });
   }).catch((err) => { window.__ratError = String(err && err.message ? err.message : err); });

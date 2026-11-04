@@ -1,5 +1,5 @@
-const CACHE = 'slop-a082979867';
-const FILES = ["./dist/city-a082979867.js","./js/building-geodata.bin.gz","./js/tree-geodata.bin.gz","./dist/part-2DKW5JFN.js","./dist/part-5FHELVQX.js","./dist/part-APXUDIYS.js","./dist/part-BSTGPQDW.js","./dist/part-HYZ3WC7W.js","./dist/part-JWV234YZ.js","./dist/part-O4WC5KQW.js","./dist/part-PH6WOWCI.js","./dist/part-RMIFO4CX.js","./dist/part-XKQIZPQY.js"];
+const CACHE = 'slop-ny-1ce7b3a8f5';
+const FILES = ["./dist/city-1ce7b3a8f5.js","./js/building-geodata.bin.gz","./js/tree-geodata.bin.gz","./dist/part-2DKW5JFN.js","./dist/part-5FHELVQX.js","./dist/part-APXUDIYS.js","./dist/part-B2JLDNR3.js","./dist/part-HYZ3WC7W.js","./dist/part-JWV234YZ.js","./dist/part-O4WC5KQW.js","./dist/part-PH6WOWCI.js","./dist/part-RMIFO4CX.js","./dist/part-XKQIZPQY.js"];
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(FILES)).then(() => self.skipWaiting()));
 });
@@ -9,6 +9,9 @@ self.addEventListener('activate', (event) => {
     await Promise.all(keys.filter((key) => key !== CACHE).map((key) => caches.delete(key)));
     await self.clients.claim();
   })());
+});
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'skip-waiting') self.skipWaiting();
 });
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);

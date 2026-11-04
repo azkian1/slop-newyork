@@ -153,7 +153,7 @@ export function makePizzaRat(gltf, THREE, opts = {}) {
   const fwd = d.clone().normalize(), up = new THREE.Vector3(0, 1, 0), side = new THREE.Vector3().crossVectors(up, fwd).normalize();
   const upL = new THREE.Vector3().crossVectors(fwd, side).normalize();
   // Larger than the studio close-up so the eyes still read from the chase camera. No catchlight.
-  const e = opts.eyes || { along: 0.5, up: 0.32, side: 0.3, r: 0.28 };
+  const e = opts.eyes || { along: 0.5, up: 0.32, side: 0.39, r: 0.1876 };
   const eyeMat = new THREE.MeshStandardMaterial({ color: 0x050505, roughness: 0.18, metalness: 0 });
   for (const s of [-1, 1]) {
     const eye = new THREE.Group();

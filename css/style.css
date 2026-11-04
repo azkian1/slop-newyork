@@ -284,13 +284,14 @@ body::after {
 
 .hud-bottom-center {
   left: 50%;
-  bottom: var(--edge);
+  bottom: max(8px, env(safe-area-inset-bottom));
   transform: translateX(-50%);
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
+  gap: 4px;
 }
+#mode-switch { display: none; }
 
 .hud-bottom-right {
   right: var(--edge);
@@ -1406,7 +1407,7 @@ body.touch-enabled .time-btn,
 body.touch-enabled .time-btn.active { height: 44px; min-width: 44px; padding: 0 8px; gap: 0; }
 body.touch-enabled .tool-btn { min-width: 44px; min-height: 44px; }
 body.touch-enabled .tool-label { display: none; }
-body.touch-enabled .hud-bottom-center { bottom: max(var(--edge), env(safe-area-inset-bottom)); }
+body.touch-enabled .hud-bottom-center { bottom: max(8px, env(safe-area-inset-bottom)); }
 body.touch-enabled .mode-label { display: block; font-size: 10px; }
 body.touch-enabled .mode-btn { width: 62px; height: 48px; padding: 0; flex-direction: column; justify-content: center; gap: 3px; }
 body.touch-enabled .hud-bottom-right { top: calc(max(var(--edge), env(safe-area-inset-top)) + 62px); right: max(var(--edge), env(safe-area-inset-right)); bottom: auto; }
@@ -1522,9 +1523,12 @@ body.matrix-mode .drop-log { border-color: #1f8f3a; }
   padding: 0;
   border-radius: 50%;
   overflow: hidden;
-  border: 2px solid rgba(255, 255, 255, 0.16);
-  background: rgba(18, 19, 22, 0.82);
-  box-shadow: var(--shadow);
+  border: 1px solid rgba(255, 246, 230, 0.72);
+  background: rgba(18, 19, 22, 0.55);
+  box-shadow:
+    0 0 0 1px rgba(255, 244, 220, 0.16),
+    0 0 12px 2px rgba(255, 236, 210, 0.28);
+  opacity: 0.82;
 }
 .skin-btn img {
   width: 100%;
@@ -1533,10 +1537,13 @@ body.matrix-mode .drop-log { border-color: #1f8f3a; }
   display: block;
   background: transparent;
 }
-.skin-btn:hover { border-color: rgba(255, 255, 255, 0.4); }
+.skin-btn:hover { border-color: rgba(255, 248, 236, 0.9); opacity: 0.94; }
 .skin-btn.is-active {
+  opacity: 1;
   border-color: var(--taxi);
-  box-shadow: 0 0 0 3px rgba(255, 194, 26, 0.35), var(--shadow);
+  box-shadow:
+    0 0 0 1px rgba(255, 194, 26, 0.55),
+    0 0 16px 3px rgba(255, 194, 26, 0.48);
 }
 .matrix-pills {
   display: flex;
