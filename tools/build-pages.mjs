@@ -46,14 +46,30 @@ const preloadBlock = [`./dist/${hashed}`, ...staticParts]
 html = html.replace('  <!-- One bundled module.', `${preloadBlock}  <!-- One bundled module.`);
 writeFileSync('index.html', html);
 
-const precache = [`./dist/${hashed}`, './js/building-geodata.bin.gz', './js/tree-geodata.bin.gz'];
+const precache = [
+  `./dist/${hashed}`,
+  './js/building-geodata.bin.gz',
+  './js/tree-geodata.bin.gz',
+  './assets/ui/pill-red.png?v=2',
+  './assets/ui/pill-blue.png?v=2',
+  './assets/ui/avatar-roach.png',
+  './assets/ui/avatar-rat.png'
+];
 for (const name of readdirSync(outdir)) {
   if (name.startsWith('part-') && name.endsWith('.js')) precache.push(`./dist/${name}`);
 }
-const sw = `const CACHE = 'slop-ny-${hash}';
+const sw = `const CACHE = 'slop-ny-${hash}-pills2';
 const FILES = ${JSON.stringify(precache)};
 self.addEventListener('install', (event) => {
-  event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(FILES)).then(() => self.skipWaiting()));
+  event.waitUntil((async () => {
+    const cache = await caches.open(CACHE);
+    await Promise.all(FILES.map(async (path) => {
+      const res = await fetch(path, { cache: 'reload' });
+      if (!res.ok) throw new Error(path);
+      await cache.put(path, res);
+    }));
+    await self.skipWaiting();
+  })());
 });
 self.addEventListener('activate', (event) => {
   event.waitUntil((async () => {
@@ -81,7 +97,7 @@ self.addEventListener('fetch', (event) => {
   // Leave stylesheets to the network. The loader is inline, and a worker that is
   // still starting must not hold the sheet that used to block the first paint.
   if (url.pathname.endsWith('.css')) return;
-  const asset = url.pathname.includes('/dist/') || url.pathname.endsWith('.bin.gz');
+  const asset = url.pathname.includes('/dist/') || url.pathname.endsWith('.bin.gz') || url.pathname.includes('/assets/ui/');
   if (!asset) return;
   event.respondWith((async () => {
     const cache = await caches.open(CACHE);

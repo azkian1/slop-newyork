@@ -1547,12 +1547,13 @@ body.matrix-mode .drop-log { border-color: #1f8f3a; }
 }
 .matrix-pills {
   display: flex;
-  gap: 10px;
+  gap: 0;
   align-items: center;
   pointer-events: auto;
 }
 .matrix-pill {
-  width: 76px;
+  width: 114px;
+  margin: 0 -12px;
   padding: 0;
   border: 0;
   border-radius: 0;
@@ -1567,7 +1568,7 @@ body.matrix-mode .drop-log { border-color: #1f8f3a; }
 }
 .matrix-pill:hover img {
   transform: translateY(-3px);
-  filter: drop-shadow(0 8px 10px rgba(255, 255, 255, 0.28));
+  filter: brightness(1.12);
 }
 .matrix-pill.is-dim {
   opacity: 0.38;
@@ -1577,7 +1578,7 @@ body.matrix-mode .drop-log { border-color: #1f8f3a; }
   filter: none;
 }
 @media (max-width: 640px) {
-  .matrix-pill { width: 64px; }
+  .matrix-pill { width: 96px; margin: 0 -10px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
