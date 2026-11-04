@@ -1,13 +1,14 @@
 # Slop Cockroach
 
-A silly mod of [Slop New York](https://github.com/mrdoob/slop-newyork) by [Mr.doob](https://github.com/mrdoob): you are a 4 cm cockroach in a full-size Manhattan.
+A silly mod of [Slop New York](https://github.com/mrdoob/slop-newyork) by [Mr.doob](https://github.com/mrdoob): you are a 4 cm cockroach, or a 25 cm pizza rat, in a full-size Manhattan.
 
-- W/S crawl (and climb), A/D turn, Space jump / let go
-- Walk into anything (buildings, poles, people, cars) and keep pushing to climb it
+- Two round portraits on the left switch the skin. The choice is remembered in this browser.
+- Cockroach: W/S crawl (and climb), A/D turn, Space jump / let go. Walk into anything and keep pushing to climb it.
+- Pizza Rat: same crumbs and the same car-sized giant, but no wall climb and no riding people. Space jumps a curb or a bumper. A car roof is a second step up from that ledge, not one leap from the street. Rat by Quaternius (CC0), file `assets/rat.glb`.
 - You only die from below: a pedestrian's footstep or a car wheel while you are on the street
 - Gold crumbs on the street give 60 s of car speed
-- Red crumbs turn you into a car-sized giant for 30 s (smooth grow and shrink). Car speed, same climbing, camera pulls back. You cannot be squished while giant. People treat you as a vehicle: they dodge, dive, and run away screaming. Touching someone knocks them down; hitting a car or bus shoves it the way the player's car would
-- M toggles Matrix mode: every surface is replaced by world-space green glyphs (no original textures or lighting). M again puts the original materials back. Open it directly with `?matrix=1`. Shift+M still opens the street map. `?lite` skips post FX, so the glyph bloom needs the normal renderer
+- Red crumbs turn you into a car-sized giant for 30 s (smooth grow and shrink). Car speed, camera pulls back. You cannot be squished while giant. People treat you as a vehicle: they dodge, dive, and run away screaming. Touching someone knocks them down; hitting a car or bus shoves it the way the player's car would. The rat still does not climb walls.
+- The blue pill enters Matrix mode: every surface is replaced by world-space green glyphs (no original textures or lighting). The red pill puts the original materials back. Open it directly with `?matrix=1`. Shift+M still opens the street map. `?lite` skips post FX, so the glyph bloom needs the normal renderer
 
 Run: `python3 -m http.server` in this folder, open http://localhost:8000 (WebGPU browser recommended; `?lite` turns off shadows and post FX for slow machines).
 The mod lives in `js/cockroach.js` and `js/matrix-mode.js`, plus small hooks in `js/main.js`, `js/controllers.js`, `js/traffic.js` and `js/post-processing.js`.

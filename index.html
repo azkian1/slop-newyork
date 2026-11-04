@@ -45,7 +45,7 @@
       }
     }
   </script>
-  <link rel="modulepreload" href="./dist/city-9b236b6651.js" />
+  <link rel="modulepreload" href="./dist/city-74d3c3876e.js" />
   <link rel="modulepreload" href="./dist/part-JWV234YZ.js" />
   <link rel="modulepreload" href="./dist/part-5FHELVQX.js" />
   <link rel="modulepreload" href="./dist/part-PH6WOWCI.js" />
@@ -57,7 +57,7 @@
       buildings: fetch(new URL('./js/building-geodata.bin.gz', import.meta.url))
     };
   </script>
-  <script type="module" src="./dist/city-9b236b6651.js"></script>
+  <script type="module" src="./dist/city-74d3c3876e.js"></script>
   <!-- Inter (UI) & Overpass (street-name signs: modelled on Highway Gothic, the US road sign typeface).
        media=print keeps these off the first paint. The loader above is already on screen. -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -180,12 +180,16 @@
     <aside id="minimap-card" class="panel radar" aria-label="Live NYC Street Radar Minimap" title="Open the full New York City street map [Shift+M]">
       <canvas id="minimap-canvas"></canvas>
       <span class="radar-north" aria-hidden="true">N</span>
-      <kbd class="radar-key">M</kbd>
+      <kbd class="radar-key" title="Open the map">⇧M</kbd>
     </aside>
   </div>
 
   <!-- Bottom-Center: Third-Person Mode Switcher & Controls Guide -->
   <footer class="hud hud-bottom-center">
+    <div id="matrix-pills" class="matrix-pills" role="group" aria-label="Matrix offer">
+      <button id="pill-blue" class="matrix-pill is-blue" type="button" title="Blue pill: enter the Matrix">Blue pill</button>
+      <button id="pill-red" class="matrix-pill is-red is-active" type="button" title="Red pill: back to the city">Red pill</button>
+    </div>
     <div id="hud-controls-hint" class="controls-hint"></div>
     <nav id="mode-switch" class="panel mode-switch" aria-label="Third-Person Navigation Mode">
       <span class="mode-indicator" aria-hidden="true"></span>

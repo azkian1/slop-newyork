@@ -56,6 +56,39 @@ const GIANT_HALF_L = 2.6;    // a bit longer than a sedan (2.18)
 const PERSON_HALF = 0.32;    // traffic.js person footprint, used while the body is still small
 const STEP_UP = 0.45; // sidewalks and curbs are 0.22 m; taller than this is a wall
 const FOOT_REACH = 0.028; // nose and flanks, so the shell clears a curb before the center enters it
+// A rat clears a curb and a bumper, not a car roof in one leap. The roof is a later step.
+const RAT_JUMP_HEIGHT = 0.7;
+const RAT_JUMP_VY = Math.sqrt(2 * 9.8 * RAT_JUMP_HEIGHT);
+const RAT_BODY_M = 0.25;
+const RAT_STEP = 0.3;
+const SKIN_KEY = 'slop-skin';
+
+function carLedges(roof) {
+  const bumper = Math.min(0.4, roof * 0.32);
+  const hood = Math.min(roof - 0.12, Math.max(bumper + 0.28, roof * 0.6));
+  const ledges = [bumper];
+  if (hood > bumper + 0.1 && hood < roof - 0.05) ledges.push(hood);
+  ledges.push(roof);
+  return ledges;
+}
+
+function nextLedge(fromH, ledges, jumpH = RAT_JUMP_HEIGHT) {
+  for (let i = 0; i < ledges.length; i++) {
+    const h = ledges[i];
+    if (h > fromH + 0.04 && h - fromH <= jumpH + 1e-3) return h;
+  }
+  return null;
+}
+
+function skinRules(id) {
+  const rat = id === 'rat';
+  return {
+    id: rat ? 'rat' : 'roach',
+    climbsWalls: !rat,
+    climbsPeople: !rat,
+    jumpHeight: rat ? RAT_JUMP_HEIGHT : (1.6 * 1.6) / (2 * 9.8)
+  };
+}
 const TURN_RATE = 3.2;
 const RADIUS = 0.03;
 const CRUMB_COUNT = 28;
@@ -294,11 +327,28 @@ function createCockroach({ scene, controllerManager: cm, trafficSystem, cameraSy
   }
 
   const contact = { nx: 0, nz: 0, depth: 0 };
-  const roachBody = () => collisionBody('person', RADIUS * st.scale, 0);
+  const ratHolder = new THREE.Group();
+  ratHolder.name = 'PizzaRat';
+  ratHolder.visible = false;
+  group.add(ratHolder);
+  let ratApi = null;
+  let ratUnit = 1;
+  let ratClip = 'idle';
+  let skinId = 'roach';
+  try { if (localStorage.getItem(SKIN_KEY) === 'rat') skinId = 'rat'; } catch { /* storage off */ }
   const st = {
     mode: 'ground', vy: 0, boost: 0, giant: 0, scale: 1, deaths: 0, eaten: 0, redEaten: 0, deadTimer: 0, legPhase: 0,
     wall: null, ped: null, car: null, spawn: p.position.clone(), lastSafe: p.position.clone(), lastEvent: ''
   };
+  function playingRat() { return skinId === 'rat' && !!ratApi; }
+  function activeStep() { return playingRat() ? RAT_STEP : STEP_UP; }
+  function activeWalk() { return playingRat() ? 2.4 : WALK_SPEED; }
+  function bodyRadius() {
+    const base = playingRat() ? 0.08 : RADIUS;
+    const k = st.scale <= 1 ? 0 : Math.min(1, (st.scale - 1) / (GIANT_SCALE - 1));
+    return base + (RADIUS * GIANT_SCALE - base) * k;
+  }
+  const roachBody = () => collisionBody('person', bodyRadius(), 0);
   p.position.y = cm.getGroundHeight(p.position.x, p.position.z, 'person');
 
   const near = (x, z, r) => cm.nearColliders(x, z, r);
@@ -315,7 +365,7 @@ function createCockroach({ scene, controllerManager: cm, trafficSystem, cameraSy
   // reports its top. Logical walk surfaces (road, sidewalk, park, plaza deck) always count.
   // A collider top counts only within a step, otherwise it is a wall and stays out of the floor.
   function surfaceAt(x, z, y) {
-    const probe = y + STEP_UP;
+    const probe = y + activeStep();
     let s = cm.getGroundHeight(x, z, 'person');
     const deck = deckHeightAt(x, z);
     if (deck > s) s = deck;
@@ -335,7 +385,7 @@ function createCockroach({ scene, controllerManager: cm, trafficSystem, cameraSy
       surfaceAt(x - hx * reach, z - hz * reach, y),
       surfaceAt(x - hz * reach, z + hx * reach, y),
       surfaceAt(x + hz * reach, z - hx * reach, y)
-    ]);
+    ], activeStep());
   }
   // Stand on the support before horizontal resolution, so a low deck is a floor and not a wall we get shoved through.
   function plantFeet() {
@@ -357,6 +407,7 @@ function createCockroach({ scene, controllerManager: cm, trafficSystem, cameraSy
     st.deadTimer = 2;
     st.lastEvent = reason;
     model.root.visible = false;
+    ratHolder.visible = false;
     splat.visible = true;
     splat.position.set(p.position.x, p.position.y + 0.002, p.position.z);
     splat.rotation.y = Math.random() * Math.PI * 2;
@@ -366,7 +417,8 @@ function createCockroach({ scene, controllerManager: cm, trafficSystem, cameraSy
 
   function respawn() {
     splat.visible = false;
-    model.root.visible = true;
+    model.root.visible = !playingRat();
+    ratHolder.visible = playingRat();
     st.mode = 'ground';
     st.ped = st.car = st.wall = null;
     st.vy = 0;
@@ -379,10 +431,10 @@ function createCockroach({ scene, controllerManager: cm, trafficSystem, cameraSy
     st.ped = { p: ped, ang: Math.atan2(p.position.x - ped.x, p.position.z - ped.z), h: 0.02, lx: ped.x, lz: ped.z };
     st.lastEvent = 'climbing a human';
   }
-  function attachCar(car, lx, lz) {
+  function attachCar(car, lx, lz, h = 0.02) {
     st.mode = 'car';
-    st.car = { car, lx, lz, h: 0.02 };
-    st.lastEvent = 'hitchhiking';
+    st.car = { car, lx, lz, h };
+    st.lastEvent = h > 0.2 ? 'on a ledge' : 'hitchhiking';
   }
 
   function checkSquish() {
@@ -420,8 +472,8 @@ function createCockroach({ scene, controllerManager: cm, trafficSystem, cameraSy
     if (fwd <= 0) return false;
     const x = p.position.x, z = p.position.z;
     const hx = Math.sin(p.heading), hz = Math.cos(p.heading);
-    // A giant knocks people over instead of climbing them. Normal size still latches on.
-    if (roachVulnerable(st.scale, st.giant)) for (const ped of trafficSystem.peds) {
+    // A giant knocks people over instead of climbing them. A rat never climbs people.
+    if (!playingRat() && roachVulnerable(st.scale, st.giant)) for (const ped of trafficSystem.peds) {
       if (!ped.rig.placed) continue;
       const dx = ped.x - x, dz = ped.z - z;
       if (dx * dx + dz * dz < 0.22 * 0.22 && dx * hx + dz * hz > -0.05) { attachPed(ped); return true; }
@@ -433,14 +485,24 @@ function createCockroach({ scene, controllerManager: cm, trafficSystem, cameraSy
       if (dx * dx + dz * dz > reach * reach) continue;
       const fx = Math.sin(car.yaw), fz = Math.cos(car.yaw);
       const lz = dx * fx + dz * fz, lx = dx * fz - dz * fx;
-      if (Math.abs(car.speed) < 0.6 && Math.abs(lz) < car.half + 0.04 && Math.abs(lx) < car.halfWidth + 0.04) { attachCar(car, lx, lz); return true; }
+      if (Math.abs(car.speed) < 0.6 && Math.abs(lz) < car.half + 0.04 && Math.abs(lx) < car.halfWidth + 0.04) {
+        if (playingRat()) {
+          const feet = p.position.y - streetLevel(car.x, car.z);
+          const ledge = nextLedge(feet, carLedges(carRoof(car)));
+          if (ledge == null) continue;
+          attachCar(car, lx, lz, ledge);
+          return true;
+        }
+        attachCar(car, lx, lz);
+        return true;
+      }
     }
     return false;
   }
 
   function updateGround(dt, fwd, turn) {
     p.heading += TURN_RATE * dt * turn;
-    const speed = ((st.boost > 0 || !roachVulnerable(st.scale, st.giant)) ? BOOST_SPEED : WALK_SPEED) * fwd;
+    const speed = ((st.boost > 0 || !roachVulnerable(st.scale, st.giant)) ? BOOST_SPEED : activeWalk()) * fwd;
     p.speed = speed;
     const hx = Math.sin(p.heading), hz = Math.cos(p.heading);
     const dist = Math.abs(speed * dt);
@@ -452,10 +514,10 @@ function createCockroach({ scene, controllerManager: cm, trafficSystem, cameraSy
       p.position.z = bz;
       // Climb, or pop out of a slab we have entered, before the sideways push treats that slab as a wall.
       plantFeet();
-      cm.resolveHorizontalCollision(p.position, RADIUS * st.scale, null, null);
+      cm.resolveHorizontalCollision(p.position, bodyRadius(), null, null);
       plantFeet();
       const pushed = Math.hypot(p.position.x - bx, p.position.z - bz);
-      if (fwd > 0 && pushed > Math.abs(step) * 0.3) {
+      if (!playingRat() && fwd > 0 && pushed > Math.abs(step) * 0.3) {
         const hit = blockingCollider(bx + hx * 0.02 * st.scale, p.position.y, bz + hz * 0.02 * st.scale);
         if (hit) {
           const len = Math.hypot(p.position.x - bx, p.position.z - bz) || 1;
@@ -470,7 +532,7 @@ function createCockroach({ scene, controllerManager: cm, trafficSystem, cameraSy
     // vertical: jumps, falls off roofs
     const surface = supportAt(p.position.x, p.position.z, p.position.y);
     const grounded = p.position.y <= surface + 0.02;
-    if (grounded && key('up')) st.vy = 1.6;
+    if (grounded && key('up')) st.vy = playingRat() ? RAT_JUMP_VY : 1.6;
     if (!grounded || st.vy > 0) {
       st.vy -= 9.8 * dt;
       p.position.y += st.vy * dt;
@@ -551,6 +613,39 @@ function createCockroach({ scene, controllerManager: cm, trafficSystem, cameraSy
     if (!car.edge) { st.mode = 'ground'; st.car = null; return; }
     const roof = carRoof(car);
     const fx = Math.sin(car.yaw), fz = Math.cos(car.yaw);
+    if (playingRat()) {
+      const ledges = carLedges(roof);
+      if (r.h < roof - 0.02) {
+        if (key('up')) {
+          const nxt = nextLedge(r.h, ledges);
+          if (nxt != null) {
+            r.h = nxt;
+            if (nxt >= roof - 0.02) r.rh = Math.atan2(-r.lx, -r.lz);
+            st.lastEvent = nxt >= roof - 0.02 ? 'riding a car' : 'on a step';
+          }
+        }
+        p.heading = Math.atan2(-(fx * r.lz + fz * r.lx), -(fz * r.lz - fx * r.lx));
+        p.speed = 0;
+      } else {
+        const crawl = roachVulnerable(st.scale, st.giant) ? activeWalk() : BOOST_SPEED;
+        r.rh = (r.rh || 0) + turn * TURN_RATE * dt;
+        r.lx += Math.sin(r.rh) * fwd * crawl * 0.5 * dt;
+        r.lz += Math.cos(r.rh) * fwd * crawl * 0.5 * dt;
+        r.lx = Math.max(-car.halfWidth * 0.75, Math.min(car.halfWidth * 0.75, r.lx));
+        r.lz = Math.max(-car.half * 0.45, Math.min(car.half * 0.45, r.lz));
+        p.heading = car.yaw + r.rh;
+        p.speed = car.speed;
+        st.lastEvent = 'riding a car';
+      }
+      const g = streetLevel(car.x, car.z);
+      p.position.set(car.x + fx * r.lz + fz * r.lx, g + r.h, car.z + fz * r.lz - fx * r.lx);
+      if ((r.h >= roof - 0.02 && key('up')) || (r.h <= ledges[0] + 0.04 && fwd < 0)) {
+        st.mode = 'ground'; st.car = null; st.vy = r.h >= roof - 0.02 ? 2 : 0;
+        p.position.x += Math.sin(p.heading) * 0.15;
+        p.position.z += Math.cos(p.heading) * 0.15;
+      }
+      return;
+    }
     const climb = roachVulnerable(st.scale, st.giant) ? WALK_SPEED : BOOST_SPEED;
     if (r.h < roof) {
       r.h = Math.max(0, Math.min(roof, r.h + fwd * climb * 0.8 * dt));
@@ -661,30 +756,23 @@ function createCockroach({ scene, controllerManager: cm, trafficSystem, cameraSy
         j.rotation.z = -a.side * 0.035 + Math.sin(st.antT * 1.3 + k * 0.3 + a.side * 2) * 0.04;
       });
     }
-  }
-
-  // HUD
-  const hud = document.createElement('div');
-  hud.id = 'roach-hud';
-  hud.style.cssText = 'position:fixed;left:16px;top:84px;z-index:50;font:600 14px/1.45 system-ui,sans-serif;color:#fff;'
-    + 'background:rgba(20,10,4,.72);padding:10px 14px;border-radius:12px;pointer-events:none;max-width:480px';
-  document.body.appendChild(hud);
-  let hudTimer = 0;
-  function updateHud(dt) {
-    hudTimer -= dt;
-    if (hudTimer > 0) return;
-    hudTimer = 0.2;
-    const lines = [
-      `SLOP COCKROACH · deaths ${st.deaths} · crumbs ${st.eaten} · red ${st.redEaten}`,
-      st.mode === 'dead' ? `SPLAT (${st.lastEvent}). Respawning...`
-        : (st.giant > 0 && st.boost > 0) ? `GIANT ROACH ${Math.ceil(st.giant)} s · CRUMB SPEED ${Math.ceil(st.boost)} s`
-        : st.giant > 0 ? `GIANT ROACH ${Math.ceil(st.giant)} s`
-        : (st.boost > 0 ? `CRUMB SPEED ${Math.ceil(st.boost)} s` : `status: ${st.lastEvent || 'scuttling'}`),
-      'W/S crawl & climb · A/D turn · Space jump / let go · M matrix'
-        + (document.body.classList.contains('matrix-mode') ? ' (on)' : '')
-    ];
-    hud.textContent = '';
-    lines.forEach((t, i) => { const d = document.createElement('div'); d.textContent = t; if (i === 2) d.style.cssText = 'font-weight:400;opacity:.8;font-size:12px'; hud.appendChild(d); });
+    const alive = st.mode !== 'dead';
+    const ratOn = alive && playingRat();
+    r.visible = alive && !playingRat();
+    ratHolder.visible = ratOn;
+    if (!ratOn) return;
+    const grown = st.scale <= 1 ? 0 : Math.min(1, (st.scale - 1) / (GIANT_SCALE - 1));
+    ratHolder.position.copy(p.position);
+    ratHolder.rotation.set(0, p.heading, 0);
+    ratHolder.scale.setScalar(ratUnit * (1 + ((4.5 / RAT_BODY_M) - 1) * grown));
+    ratApi.floorY = (st.mode === 'car' || st.mode === 'ped')
+      ? p.position.y
+      : supportAt(p.position.x, p.position.z, p.position.y);
+    let clip = 'idle';
+    if (st.vy > 0.35) clip = 'jump';
+    else if (moving) clip = (Math.abs(p.speed) > 1.15 || st.boost > 0 || st.scale > 1) ? 'run' : 'walk';
+    if (clip !== ratClip) { ratApi.crossfade(clip, 0.18); ratClip = clip; }
+    ratApi.update(dt);
   }
 
   // Replaces the walker controller
@@ -729,7 +817,7 @@ function createCockroach({ scene, controllerManager: cm, trafficSystem, cameraSy
     updateCrumbs(dt, elapsed);
     // Shrinking (or a shove from a car) must leave the body outside solid walls.
     if (st.scale > 1 && (st.mode === 'ground' || st.mode === 'wall')) {
-      cm.resolveHorizontalCollision(p.position, RADIUS * st.scale, null, null);
+      cm.resolveHorizontalCollision(p.position, bodyRadius(), null, null);
       if (st.mode === 'ground') {
         const floor = surfaceAt(p.position.x, p.position.z, p.position.y + 1);
         if (p.position.y < floor) p.position.y = floor;
@@ -739,7 +827,6 @@ function createCockroach({ scene, controllerManager: cm, trafficSystem, cameraSy
     p.prevX = fromX;
     p.prevZ = fromZ;
     poseModel(dt);
-    updateHud(dt);
   };
 
   // Low camera, slightly behind; rotates onto walls with the roach.
@@ -799,7 +886,8 @@ function createCockroach({ scene, controllerManager: cm, trafficSystem, cameraSy
     const climbingPed = st.mode === 'ped' && model.root.rotation.x !== 0;
     const ridingPed = st.mode === 'ped' && !climbingPed;
     const vertical = st.mode === 'wall' || climbingPed || (st.mode === 'car' && model.root.rotation.x !== 0);
-    const sc = st.scale;
+    const grownCam = st.scale <= 1 ? 0 : Math.min(1, (st.scale - 1) / (GIANT_SCALE - 1));
+    const sc = playingRat() ? (1.15 / 0.28) + (GIANT_SCALE - (1.15 / 0.28)) * grownCam : st.scale;
     const back = (st.boost > 0 ? 0.45 : 0.28) * sc;
     // Safe origin the camera ray starts from: just off the surface the roach is on
     origin.set(pos.x, pos.y + 0.03 * sc, pos.z);
@@ -880,6 +968,128 @@ function createCockroach({ scene, controllerManager: cm, trafficSystem, cameraSy
     if (ok < n) cam.lerpVectors(from, cam, Math.max(0, ok - 1) / n);
   }
 
+  const picker = document.createElement('nav');
+  picker.id = 'skin-picker';
+  picker.className = 'hud skin-picker';
+  picker.setAttribute('aria-label', 'Player skin');
+  function skinButton(id, label) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'skin-btn';
+    button.dataset.skin = id;
+    button.title = label;
+    button.setAttribute('aria-label', label);
+    const img = document.createElement('img');
+    img.alt = '';
+    button.appendChild(img);
+    button.addEventListener('click', () => setSkin(id));
+    picker.appendChild(button);
+    return button;
+  }
+  const roachBtn = skinButton('roach', 'Cockroach');
+  const ratBtn = skinButton('rat', 'Pizza Rat');
+  document.body.appendChild(picker);
+  function markSkin() {
+    const id = playingRat() ? 'rat' : 'roach';
+    for (const button of picker.querySelectorAll('.skin-btn')) {
+      const on = button.dataset.skin === (skinId === 'rat' && ratApi ? 'rat' : id);
+      button.classList.toggle('is-active', on);
+      button.setAttribute('aria-pressed', String(on));
+    }
+  }
+  function setSkin(id) {
+    if (id === 'rat' && !ratApi) return;
+    skinId = id === 'rat' ? 'rat' : 'roach';
+    try { localStorage.setItem(SKIN_KEY, skinId); } catch { /* storage off */ }
+    if (!playingRat() && (st.mode === 'wall' || st.mode === 'ped')) {
+      /* cockroach keeps its climb */
+    }
+    if (playingRat() && (st.mode === 'wall' || st.mode === 'ped')) {
+      st.mode = 'ground';
+      st.wall = null;
+      st.ped = null;
+      st.vy = 0;
+    }
+    p.label = playingRat() ? 'Pizza Rat' : 'Cockroach';
+    const modeEl = document.getElementById('hud-active-mode');
+    if (modeEl) modeEl.textContent = p.label;
+    model.root.visible = st.mode !== 'dead' && !playingRat();
+    ratHolder.visible = st.mode !== 'dead' && playingRat();
+    markSkin();
+  }
+  function paintedPortrait(button, draw) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 96;
+    canvas.height = 96;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#16120e';
+    ctx.fillRect(0, 0, 96, 96);
+    draw(ctx);
+    button.querySelector('img').src = canvas.toDataURL('image/png');
+  }
+  paintedPortrait(roachBtn, (ctx) => {
+    ctx.fillStyle = '#4a1604';
+    ctx.beginPath();
+    ctx.ellipse(48, 52, 16, 28, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#5a2a10';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(40, 28);
+    ctx.quadraticCurveTo(24, 8, 16, 14);
+    ctx.moveTo(56, 28);
+    ctx.quadraticCurveTo(72, 8, 80, 14);
+    ctx.stroke();
+  });
+  paintedPortrait(ratBtn, (ctx) => {
+    ctx.fillStyle = '#1a1210';
+    ctx.beginPath();
+    ctx.ellipse(46, 50, 22, 16, -0.3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#d9a090';
+    ctx.beginPath();
+    ctx.ellipse(28, 40, 6, 8, -0.4, 0, Math.PI * 2);
+    ctx.ellipse(34, 36, 5, 7, 0.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#e0b0a4';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(62, 58);
+    ctx.quadraticCurveTo(84, 78, 78, 86);
+    ctx.stroke();
+    ctx.fillStyle = '#f0c04a';
+    ctx.beginPath();
+    ctx.moveTo(58, 48);
+    ctx.lineTo(86, 40);
+    ctx.lineTo(74, 62);
+    ctx.fill();
+  });
+  const pizzaMod = import('./pizza-rat.js');
+  const loaderMod = import('three/addons/loaders/GLTFLoader.js');
+  Promise.all([pizzaMod, loaderMod]).then(([{ makePizzaRat }, { GLTFLoader }]) => {
+    const loader = new GLTFLoader();
+    loader.load(new URL('assets/rat.glb', document.baseURI).href, (gltf) => {
+      ratApi = makePizzaRat(gltf, THREE, {});
+      const tail = ratApi.root.getObjectByName('Tail1');
+      const head = ratApi.root.getObjectByName('Head');
+      let body = 3;
+      if (tail && head) {
+        const a = new THREE.Vector3();
+        const b = new THREE.Vector3();
+        tail.getWorldPosition(a);
+        head.getWorldPosition(b);
+        if (a.distanceTo(b) > 0.2) body = a.distanceTo(b);
+      }
+      ratUnit = RAT_BODY_M / body;
+      ratHolder.add(ratApi.root);
+      ratApi.reset('idle');
+      ratClip = 'idle';
+      if (skinId === 'rat') setSkin('rat');
+      else markSkin();
+    }, undefined, (err) => { window.__ratError = String(err && err.message ? err.message : err); });
+  }).catch((err) => { window.__ratError = String(err && err.message ? err.message : err); });
+  markSkin();
+
   const api = {
     group, state: st, entity: p,
     updateCamera,
@@ -926,6 +1136,8 @@ function createCockroach({ scene, controllerManager: cm, trafficSystem, cameraSy
       }
       return best;
     },
+    skin: () => (playingRat() ? 'rat' : 'roach'),
+    setSkin,
     blocked(x, z) { return Boolean(blockingCollider(x, streetLevel(x, z), z)); },
     probeWall(maxD = 6) {
       let best = null;
@@ -944,4 +1156,7 @@ function createCockroach({ scene, controllerManager: cm, trafficSystem, cameraSy
   return api;
 }
 
-export { createCockroach, stepGiant, giantFootprint, roachVulnerable, GIANT_TIME, GIANT_SCALE, GIANT_HALF_W, GIANT_HALF_L, STEP_UP, FOOT_REACH };
+export {
+  createCockroach, stepGiant, giantFootprint, roachVulnerable, GIANT_TIME, GIANT_SCALE,
+  GIANT_HALF_W, GIANT_HALF_L, STEP_UP, FOOT_REACH, carLedges, nextLedge, skinRules, RAT_JUMP_HEIGHT
+};

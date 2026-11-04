@@ -36,14 +36,23 @@ test('matrix=1 in the query turns the mode on', () => {
   assert.equal(matrixFromSearch(''), false);
 });
 
-test('M swaps mesh materials for a world-space glyph shader', () => {
+test('the blue and red pills swap mesh materials for a world-space glyph shader', () => {
   const main = readFileSync(join(root, 'js/main.js'), 'utf8');
   const mode = readFileSync(join(root, 'js/matrix-mode.js'), 'utf8');
   const grade = readFileSync(join(root, 'js/post-processing.js'), 'utf8');
   const html = readFileSync(join(root, 'index.html'), 'utf8');
-  assert.match(main, /case 'KeyM'/);
+  const map = readFileSync(join(root, 'js/nyc-map.js'), 'utf8');
+  assert.doesNotMatch(main, /case 'KeyM'/);
+  assert.doesNotMatch(main, /\['M'\], 'Matrix'/);
+  assert.match(main, /pill-blue/);
+  assert.match(main, /pill-red/);
+  assert.match(main, /applyMatrix\(true\)/);
+  assert.match(main, /applyMatrix\(false\)/);
+  assert.match(html, /id="pill-blue"/);
+  assert.match(html, /id="pill-red"/);
+  assert.match(html, /Blue pill: enter the Matrix/);
+  assert.match(map, /KeyM' && e\.shiftKey/);
   assert.match(main, /matrixFromSearch\(location\.search\)/);
-  assert.match(main, /\['M'\], 'Matrix'/);
   assert.match(main, /matrixMode\.setEnabled\(scene/);
   assert.match(mode, /positionWorld/);
   assert.match(mode, /normalWorld/);

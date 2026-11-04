@@ -273,7 +273,15 @@ async function initApp() {
     colorGrade.setMatrix(on);
     ssrPass.intensity.value = on ? 0 : 0.50;
     document.body.classList.toggle('matrix-mode', on);
+    const blue = document.getElementById('pill-blue');
+    const red = document.getElementById('pill-red');
+    if (blue) blue.classList.toggle('is-active', on);
+    if (red) red.classList.toggle('is-active', !on);
   };
+  const pillBlue = document.getElementById('pill-blue');
+  const pillRed = document.getElementById('pill-red');
+  if (pillBlue) pillBlue.addEventListener('click', () => ensureMatrix().then(() => applyMatrix(true)));
+  if (pillRed) pillRed.addEventListener('click', () => ensureMatrix().then(() => applyMatrix(false)));
   // Still frames for headless checks (?matrix=1&shot=1). Not used by the live toggle.
   if (new URLSearchParams(location.search).get('shot') === '1') {
     window.__aim = (x, y, z, lx, ly, lz) => {
@@ -316,7 +324,7 @@ async function initApp() {
 
   // Keyboard guide for each mode: [keys, action]
   const controlHints = {
-    person: [[['W', 'S'], 'Crawl / Climb'], [['A', 'D'], 'Turn'], [['Space'], 'Jump / Let go'], [['M'], 'Matrix']],
+    person: [[['W', 'S'], 'Move'], [['A', 'D'], 'Turn'], [['Space'], 'Jump']],
     car: [[['W', 'S'], 'Drive / Reverse'], [['A', 'D'], 'Steer'], [['B'], 'Horn'], [['Drag'], 'Orbit']],
     cyclist: [[['W', 'S'], 'Pedal / Brake'], [['A', 'D'], 'Lean & Turn'], [['Drag'], 'Orbit']],
     helicopter: [[['W', 'S'], 'Pitch'], [['A', 'D'], 'Yaw'], [['Space', 'E'], 'Ascend'], [['Q', 'C'], 'Descend']]
@@ -604,11 +612,6 @@ async function initApp() {
         break;
       case 'KeyH':
         if (hudToggleBtn) hudToggleBtn.click();
-        break;
-      case 'KeyM':
-        if (!e.repeat && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && !mapSystem.isFullMapOpen) {
-          ensureMatrix().then(() => applyMatrix(!matrixEnabled));
-        }
         break;
       case 'KeyN':
         if (!e.repeat && !e.metaKey && !e.ctrlKey && !e.altKey) audioSystem.setEnabled(!audioSystem.enabled);

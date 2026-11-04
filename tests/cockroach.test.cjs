@@ -8,7 +8,7 @@ const root = join(__dirname, '..');
 const source = readFileSync(join(root, 'js/cockroach.js'), 'utf8');
 const {
   stepGiant, giantFootprint, roachVulnerable, resolveCurb, supportHeight, climbStep, FOOT_REACH,
-  GIANT_TIME, GIANT_SCALE, GIANT_HALF_W, GIANT_HALF_L
+  GIANT_TIME, GIANT_SCALE, GIANT_HALF_W, GIANT_HALF_L, carLedges, nextLedge, skinRules, RAT_JUMP_HEIGHT
 } = loadModule(source, {
   imports: {
     'three/webgpu': {},
@@ -127,4 +127,22 @@ test('driving onto a sidewalk climbs the curb and never stays inside the slab', 
   assert.equal(inside.y, 0.22);
   const deck = climbStep(0, [0.22]);
   assert.equal(deck, 0.22);
+});
+
+test('a rat jumps a curb and a bumper, and does not climb walls or people', () => {
+  assert.equal(skinRules('roach').climbsWalls, true);
+  assert.equal(skinRules('roach').climbsPeople, true);
+  assert.equal(skinRules('rat').climbsWalls, false);
+  assert.equal(skinRules('rat').climbsPeople, false);
+  assert.ok(RAT_JUMP_HEIGHT > 0.22);
+  assert.ok(RAT_JUMP_HEIGHT < 1.2);
+  const ledges = carLedges(1.45);
+  assert.ok(nextLedge(0, ledges) < 0.7);
+  assert.equal(nextLedge(0, ledges, RAT_JUMP_HEIGHT) < 1.2, true);
+  assert.ok(nextLedge(0, ledges) < ledges[ledges.length - 1]);
+  const fromStreet = nextLedge(0, ledges);
+  const fromStep = nextLedge(fromStreet, ledges);
+  assert.ok(fromStep > fromStreet);
+  assert.ok(fromStep < ledges[ledges.length - 1] || Math.abs(fromStep - ledges[ledges.length - 1]) < 0.8);
+  assert.equal(nextLedge(0, [1.45], RAT_JUMP_HEIGHT), null);
 });

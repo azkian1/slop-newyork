@@ -120,10 +120,18 @@ export async function createDrops({ scene, cameraSystem, controllerManager, mapS
   list.className = 'drop-log-list';
   panel.append(toggle, list);
   document.body.appendChild(panel);
-  toggle.addEventListener('click', () => {
-    const closed = panel.classList.toggle('is-closed');
-    toggle.setAttribute('aria-expanded', String(!closed));
-  });
+  const PANEL_KEY = 'slop-drops-open';
+  function setDropsOpen(open) {
+    panel.classList.toggle('is-closed', !open);
+    toggle.setAttribute('aria-expanded', String(open));
+    toggle.setAttribute('aria-label', open ? 'Hide the drawings list' : 'Show the drawings list');
+    toggle.textContent = 'Drops';
+    try { localStorage.setItem(PANEL_KEY, open ? '1' : '0'); } catch { /* storage off */ }
+  }
+  let dropsOpen = true;
+  try { if (localStorage.getItem(PANEL_KEY) === '0') dropsOpen = false; } catch { /* storage off */ }
+  setDropsOpen(dropsOpen);
+  toggle.addEventListener('click', () => setDropsOpen(panel.classList.contains('is-closed')));
 
   const items = [];
   const contact = { nx: 0, nz: 0, depth: 0 };
@@ -224,6 +232,23 @@ export async function createDrops({ scene, cameraSystem, controllerManager, mapS
     rowQueue.push({ actor, prepend });
     return actor;
   }
+  function thumbURL(actor) {
+    if (actor.thumbUrl) return actor.thumbUrl;
+    const painted = paintDrop(actor.drop.spec, actor.drop.author, actor.drop.id);
+    actor.thumbUrl = painted.thumb.toDataURL();
+    return actor.thumbUrl;
+  }
+  const thumbObserver = typeof IntersectionObserver === 'function'
+    ? new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        const img = entry.target;
+        const actor = img._actor;
+        if (actor && !img.getAttribute('src')) img.src = thumbURL(actor);
+        thumbObserver.unobserve(img);
+      }
+    }, { root: list, rootMargin: '120px' })
+    : null;
   function buildRow(actor, prepend) {
     const drop = actor.drop;
     const author = String(drop.author || '');
@@ -233,7 +258,10 @@ export async function createDrops({ scene, cameraSystem, controllerManager, mapS
     const img = document.createElement('img');
     img.alt = '';
     actor.img = img;
+    img._actor = actor;
     if (actor.painted) img.src = actor.painted.thumb.toDataURL();
+    else if (typeof IntersectionObserver === 'function') thumbObserver.observe(img);
+    else img.src = thumbURL(actor);
     const text = document.createElement('span');
     text.className = 'drop-row-text';
     const title = document.createElement('strong');
