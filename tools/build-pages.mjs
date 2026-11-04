@@ -60,7 +60,7 @@ const precache = [
 for (const name of readdirSync(outdir)) {
   if (name.startsWith('part-') && name.endsWith('.js')) precache.push(`./dist/${name}`);
 }
-const sw = `const CACHE = 'slop-ny-${hash}-pills3';
+const sw = `const CACHE = 'slop-ny-${hash}-drops1';
 const FILES = ${JSON.stringify(precache)};
 self.addEventListener('install', (event) => {
   event.waitUntil((async () => {

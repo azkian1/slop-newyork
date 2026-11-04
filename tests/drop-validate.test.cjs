@@ -8,8 +8,9 @@ const root = join(__dirname, '..');
 const rng = loadModule(readFileSync(join(root, 'js/drop-rng.js'), 'utf8'));
 const place = loadModule(readFileSync(join(root, 'js/drop-place.js'), 'utf8'), { imports: { './drop-rng.js': rng } });
 const size = loadModule(readFileSync(join(root, 'js/drop-size.js'), 'utf8'));
+const layout = loadModule(readFileSync(join(root, 'js/drop-layout.js'), 'utf8'));
 const validate = loadModule(readFileSync(join(root, 'js/drop-validate.js'), 'utf8'), {
-  imports: { './drop-place.js': place, './drop-size.js': size }
+  imports: { './drop-place.js': place, './drop-size.js': size, './drop-layout.js': layout }
 });
 const config = loadModule(readFileSync(join(root, 'js/drops-config.js'), 'utf8'));
 const {
@@ -103,6 +104,52 @@ test('a 404 remote fetch is empty and silent', async () => {
     fetchImpl: async () => { throw new Error('network down'); }
   });
   assert.equal(bad.length, 0);
+});
+
+test('a 304 or an unchanged body does not reparse, and the default fetch is still an array', async () => {
+  const doc = await fetchRemoteDocument('https://example.test/drops.json', {
+    meta: true,
+    etag: '"abc"',
+    modified: 'Mon, 01 Jan 2024 00:00:00 GMT',
+    hash: 'prev',
+    fetchImpl: async (_url, init) => {
+      assert.equal(init.headers['If-None-Match'], '"abc"');
+      assert.equal(init.headers['If-Modified-Since'], 'Mon, 01 Jan 2024 00:00:00 GMT');
+      assert.equal(init.cache, 'no-store');
+      return { ok: false, status: 304, headers: { get() { return null; } } };
+    }
+  });
+  assert.equal(doc.notModified, true);
+  assert.equal(doc.rows.length, 0);
+  assert.equal(doc.etag, '"abc"');
+  assert.equal(doc.hash, 'prev');
+
+  const body = '[]';
+  const same = await fetchRemoteDocument('https://example.test/drops.json', {
+    meta: true,
+    hash: layout.hashText(body),
+    fetchImpl: async () => ({
+      ok: true,
+      status: 200,
+      headers: { get(name) { return name === 'etag' ? '"e2"' : null; } },
+      text: async () => body
+    })
+  });
+  assert.equal(same.notModified, true);
+  assert.equal(same.hash, layout.hashText(body));
+  assert.equal(same.etag, '"e2"');
+
+  const rows = await fetchRemoteDocument('https://example.test/drops.json', {
+    fetchImpl: async () => ({
+      ok: true,
+      status: 200,
+      headers: { get() { return null; } },
+      text: async () => '[{"id":"drop-remote-ok"}]'
+    })
+  });
+  assert.ok(Array.isArray(rows));
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].id, 'drop-remote-ok');
 });
 
 test('polling waits three minutes, throttles focus, and pauses while hidden', () => {

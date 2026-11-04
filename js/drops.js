@@ -1,35 +1,31 @@
-// Objects people asked for, spat into the city by a GrokBot and left as trash.
-// New since the last visit fall from the sky. Older ones are already on the ground.
-// Pushes stay on this machine.
+// Objects people asked for, left in the city by a GrokBot.
+// A drop from the last two hours flies in for every visitor. Older ones are already
+// on the ground. A drop that arrives while the page is open flies in too.
+// Pushes stay on this machine. A leftover slop-drops-seen key is ignored.
 
 import * as THREE from 'three/webgpu';
 import { paintDrop } from './drop-paint.js';
 import { buildingContact } from './controllers.js';
 import { makeBot } from './grok-bot.js';
-import { chooseStand, ejectCircle } from './drop-place.js';
+import { CITY_BOUNDS, chooseStand, ejectCircle } from './drop-place.js';
 import { cardEdgeFor, worldCardSize } from './drop-size.js';
 import { DROPS_FETCH_TIMEOUT_MS, DROPS_POLL_MS, DROPS_REMOTE_URL, pollDue } from './drops-config.js';
+import {
+  CARD_CAP,
+  DELIVER_CAP,
+  PANEL_FIRST,
+  PANEL_PAGE,
+  compareCreated,
+  isFresh,
+  nearestFree,
+  placeProtected
+} from './drop-layout.js';
 import {
   acceptLocalRecords,
   acceptRemoteRecords,
   fetchRemoteDocument,
   xProfileUrl
 } from './drop-validate.js';
-
-const SEEN_KEY = 'slop-drops-seen';
-
-function loadSeen() {
-  try {
-    const raw = JSON.parse(localStorage.getItem(SEEN_KEY) || '[]');
-    return new Set(Array.isArray(raw) ? raw : []);
-  } catch {
-    return new Set();
-  }
-}
-
-function saveSeen(set) {
-  try { localStorage.setItem(SEEN_KEY, JSON.stringify([...set])); } catch { /* storage off */ }
-}
 
 function ago(iso) {
   const s = Math.max(0, (Date.now() - Date.parse(iso)) / 1000);
@@ -90,7 +86,8 @@ export async function createDrops({ scene, cameraSystem, controllerManager, mapS
     localRows = [];
   }
   // A missing or hostile remote file must not surface in the page. Local drawings still load.
-  const remoteRows = await fetchRemoteDocument(DROPS_REMOTE_URL, { timeoutMs: DROPS_FETCH_TIMEOUT_MS });
+  const remoteDoc = await fetchRemoteDocument(DROPS_REMOTE_URL, { timeoutMs: DROPS_FETCH_TIMEOUT_MS, meta: true });
+  const remoteRows = remoteDoc.rows || [];
   const local = acceptLocalRecords(localRows, (message) => console.warn(message));
   const knownIds = new Set(local.map((row) => row.id));
   const warned = new Set();
@@ -102,7 +99,6 @@ export async function createDrops({ scene, cameraSystem, controllerManager, mapS
   const rows = [...local, ...remote.taken];
   if (!rows.length) return null;
 
-  const seen = loadSeen();
   const cm = controllerManager;
   const group = new THREE.Group();
   group.name = 'Drops';
@@ -170,8 +166,15 @@ export async function createDrops({ scene, cameraSystem, controllerManager, mapS
     else cm.teleportActiveTo(spot.x, spot.z, spot.heading);
   }
   let overlay = null;
-  const rowQueue = [];
-  let rowCursor = 0;
+  let shown = 0;
+  const sentinel = document.createElement('div');
+  sentinel.className = 'drop-log-sentinel';
+  list.appendChild(sentinel);
+  function countPending() {
+    let n = 0;
+    for (let i = 0; i < items.length; i++) if (items[i].pending) n++;
+    return n;
+  }
   function ensureCard(actor) {
     if (actor.mesh) return;
     const card = makeCard(actor.drop);
@@ -184,7 +187,7 @@ export async function createDrops({ scene, cameraSystem, controllerManager, mapS
     card.mesh.position.set(actor.x, actor.y + card.worldH * 0.5, actor.z);
     card.mesh.visible = !actor.pending;
     group.add(card.mesh);
-    if (actor.img && card.painted) actor.img.src = card.painted.thumb.toDataURL();
+    if (actor.img && !actor.img.getAttribute('src')) actor.img.src = thumbURL(actor);
   }
   function releaseCard(actor) {
     if (!actor.mesh || actor.falling || actor.pending) return;
@@ -196,23 +199,26 @@ export async function createDrops({ scene, cameraSystem, controllerManager, mapS
     actor.tex = null;
     actor.painted = null;
   }
-  function addActor(drop, { prepend = false } = {}) {
+  function addActor(drop, { prepend = false, fromPoll = false, deliver = null } = {}) {
     const size = worldCardSize(drop.height, drop.spec, cardEdgeFor(drop.id));
     const y0 = groundY(cm, drop);
-    const fresh = !seen.has(drop.id);
+    const want = deliver === null ? (fromPoll || isFresh(drop.created, Date.now())) : deliver;
+    const animate = !!want && countPending() < DELIVER_CAP;
     const actor = {
       drop,
       mesh: null,
       tex: null,
       painted: null,
       img: null,
+      thumbUrl: null,
+      listed: false,
       worldH: size.worldH,
       worldW: size.worldW,
       x: drop.x, z: drop.z, y: y0,
       vx: 0, vz: 0, vy: 0,
-      grounded: !fresh,
+      grounded: !animate,
       falling: false,
-      pending: fresh,
+      pending: animate,
       radius: Math.max(0.55, Math.min(size.worldW * 0.5, 4))
     };
     separate(actor);
@@ -220,8 +226,8 @@ export async function createDrops({ scene, cameraSystem, controllerManager, mapS
     separate(actor);
     actor.drop.x = actor.x;
     actor.drop.z = actor.z;
-    if (fresh) seen.add(drop.id);
-    items.push(actor);
+    if (prepend) items.unshift(actor);
+    else items.push(actor);
     if (overlay) {
       overlay.drops.push({
         get x() { return actor.x; },
@@ -229,13 +235,17 @@ export async function createDrops({ scene, cameraSystem, controllerManager, mapS
         get thumb() { return actor.painted ? actor.painted.thumb : null; }
       });
     }
-    rowQueue.push({ actor, prepend });
+    if (prepend) {
+      buildRow(actor, true);
+      shown += 1;
+    }
     return actor;
   }
   function thumbURL(actor) {
     if (actor.thumbUrl) return actor.thumbUrl;
-    const painted = paintDrop(actor.drop.spec, actor.drop.author, actor.drop.id);
-    actor.thumbUrl = painted.thumb.toDataURL();
+    const ready = actor.painted && actor.painted.thumb;
+    const thumb = ready || paintDrop(actor.drop.spec, actor.drop.author, actor.drop.id).thumb;
+    actor.thumbUrl = thumb.toDataURL();
     return actor.thumbUrl;
   }
   const thumbObserver = typeof IntersectionObserver === 'function'
@@ -250,6 +260,8 @@ export async function createDrops({ scene, cameraSystem, controllerManager, mapS
     }, { root: list, rootMargin: '120px' })
     : null;
   function buildRow(actor, prepend) {
+    if (actor.listed) return actor;
+    actor.listed = true;
     const drop = actor.drop;
     const author = String(drop.author || '');
     const row = document.createElement('button');
@@ -259,8 +271,8 @@ export async function createDrops({ scene, cameraSystem, controllerManager, mapS
     img.alt = '';
     actor.img = img;
     img._actor = actor;
-    if (actor.painted) img.src = actor.painted.thumb.toDataURL();
-    else if (typeof IntersectionObserver === 'function') thumbObserver.observe(img);
+    if (actor.thumbUrl || actor.painted) img.src = thumbURL(actor);
+    else if (thumbObserver) thumbObserver.observe(img);
     else img.src = thumbURL(actor);
     const text = document.createElement('span');
     text.className = 'drop-row-text';
@@ -285,13 +297,65 @@ export async function createDrops({ scene, cameraSystem, controllerManager, mapS
     text.append(title, meta);
     row.append(img, text);
     row.addEventListener('click', () => teleportTo(actor));
-    if (prepend && list.firstChild) list.insertBefore(row, list.firstChild);
-    else list.appendChild(row);
+    if (prepend) {
+      const first = list.querySelector('.drop-row');
+      list.insertBefore(row, first || sentinel);
+    } else {
+      list.insertBefore(row, sentinel);
+    }
     return actor;
   }
-  const newest = [...rows].sort((a, b) => Date.parse(b.created) - Date.parse(a.created));
+  function reveal(count) {
+    let left = count;
+    while (left > 0 && shown < items.length) {
+      buildRow(items[shown], false);
+      shown += 1;
+      left -= 1;
+    }
+    list.appendChild(sentinel);
+  }
+  function pageMore() {
+    if (shown >= items.length) return;
+    if (list.scrollHeight <= list.clientHeight + 2) return;
+    const rowBox = list.getBoundingClientRect();
+    const mark = sentinel.getBoundingClientRect();
+    if (mark.top > rowBox.bottom + 40) return;
+    reveal(PANEL_PAGE);
+    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(pageMore);
+  }
+  const pageObserver = typeof IntersectionObserver === 'function'
+    ? new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) pageMore();
+    }, { root: list, rootMargin: '40px' })
+    : null;
+  function walkableAt(x, z, drop) {
+    if (drop && drop.surface === 'roof') {
+      let top = 0;
+      for (const c of cm.nearColliders(x, z, 6)) {
+        if (x < c.minX || x > c.maxX || z < c.minZ || z > c.maxZ) continue;
+        if (c.maxY > top && c.maxY < 220) top = c.maxY;
+      }
+      if (top > 3) return true;
+    }
+    const y = cm.getGroundHeight(x, z, 'person');
+    if (!Number.isFinite(y)) return false;
+    const body = { car: false, radius: 0.35, extX: 0.35, extZ: 0.35, bottom: 0.02, top: 1.1 };
+    for (const c of cm.nearColliders(x, z, 1.6)) {
+      if (buildingContact(c, x, y + 0.04, z, body)) return false;
+    }
+    return true;
+  }
+  const spots = placeProtected(rows, CITY_BOUNDS, walkableAt);
+  for (let i = 0; i < rows.length; i++) {
+    const spot = spots.get(rows[i].id);
+    if (!spot) continue;
+    rows[i].x = spot.x;
+    rows[i].z = spot.z;
+  }
+  const newest = rows.slice().sort((a, b) => compareCreated(b, a));
   for (const drop of newest) addActor(drop);
-  saveSeen(seen);
+  reveal(PANEL_FIRST);
+  if (pageObserver) pageObserver.observe(sentinel);
 
   const streets = ((network && network.edges) || []).map((edge) => ({
     x0: edge.x0,
@@ -327,49 +391,6 @@ export async function createDrops({ scene, cameraSystem, controllerManager, mapS
     }
     return { i: best, t: bestT };
   };
-  const routeTo = (from, to) => {
-    if (!streets.length || from === to) return [from];
-    const goal = streets[to];
-    const gx = (goal.x0 + goal.x1) * 0.5;
-    const gz = (goal.z0 + goal.z1) * 0.5;
-    const score = new Map([[from, 0]]);
-    const prev = new Map();
-    const open = [from];
-    const seen = new Set();
-    while (open.length) {
-      let pick = 0;
-      let best = Infinity;
-      for (let i = 0; i < open.length; i++) {
-        const e = streets[open[i]];
-        const s = score.get(open[i]) + Math.hypot((e.x0 + e.x1) * 0.5 - gx, (e.z0 + e.z1) * 0.5 - gz);
-        if (s < best) { best = s; pick = i; }
-      }
-      const cur = open.splice(pick, 1)[0];
-      if (cur === to) break;
-      if (seen.has(cur)) continue;
-      seen.add(cur);
-      const base = score.get(cur);
-      for (const nxt of streets[cur].next) {
-        const ng = base + streets[cur].len;
-        if (ng < (score.get(nxt) ?? Infinity)) {
-          score.set(nxt, ng);
-          prev.set(nxt, cur);
-          open.push(nxt);
-        }
-      }
-    }
-    const path = [];
-    let cursor = prev.has(to) || to === from ? to : from;
-    const guard = new Set();
-    while (cursor !== undefined && !guard.has(cursor)) {
-      guard.add(cursor);
-      path.push(cursor);
-      if (cursor === from) break;
-      cursor = prev.get(cursor);
-    }
-    path.reverse();
-    return path.length ? path : [from];
-  };
   const startOn = streets.length ? nearestStreet(40, 360) : { i: 0, t: 0 };
   const flyer = {
     mesh: makeBot(),
@@ -386,6 +407,7 @@ export async function createDrops({ scene, cameraSystem, controllerManager, mapS
     mode: 'wander',
     job: null,
     spitT: 0,
+    blinkT: 0,
     released: false
   };
   group.add(flyer.mesh);
@@ -452,16 +474,23 @@ export async function createDrops({ scene, cameraSystem, controllerManager, mapS
     const cam = camera.position;
     const mouthOf = (actor) => groundY(cm, actor.drop) + actor.worldH + 1.2;
     const nextJob = () => items.find((actor) => actor.pending) || null;
+    const approach = (job) => {
+      let h = 2166136261;
+      const id = String(job.drop.id);
+      for (let i = 0; i < id.length; i++) {
+        h ^= id.charCodeAt(i);
+        h = Math.imul(h, 16777619);
+      }
+      const ang = ((h >>> 0) / 4294967296) * Math.PI * 2;
+      return { x: job.x + Math.cos(ang) * 6, z: job.z + Math.sin(ang) * 6 };
+    };
     const beginJob = (job) => {
-      flyer.mode = 'route';
+      flyer.mode = 'blink';
       flyer.job = job;
       flyer.released = false;
       flyer.spitT = 0;
-      if (streets.length) {
-        const dest = nearestStreet(job.x, job.z);
-        flyer.path = routeTo(flyer.edge, dest.i);
-        flyer.pathAt = 0;
-      }
+      flyer.blinkT = 0;
+      flyer.mesh.visible = false;
     };
     const rideStreet = (speed) => {
       if (!streets.length) return;
@@ -512,15 +541,17 @@ export async function createDrops({ scene, cameraSystem, controllerManager, mapS
       flyer.y = streetClear(flyer.alt);
       const job = nextJob();
       if (job) beginJob(job);
-    } else if (flyer.mode === 'route' && flyer.job) {
-      rideStreet(28);
-      flyer.y = streetClear(flyer.alt);
-      const dx = flyer.job.x - flyer.x;
-      const dz = flyer.job.z - flyer.z;
-      if (dx * dx + dz * dz < 12 * 12 || (flyer.path && flyer.pathAt >= flyer.path.length - 1 && dx * dx + dz * dz < 40 * 40)) {
+    } else if (flyer.mode === 'blink' && flyer.job) {
+      flyer.blinkT += dt;
+      flyer.mesh.visible = false;
+      if (flyer.blinkT >= 0.12) {
+        const near = approach(flyer.job);
+        flyer.x = near.x;
+        flyer.z = near.z;
+        flyer.y = mouthOf(flyer.job);
+        flyer.mesh.visible = true;
         flyer.mode = 'spit';
         flyer.spitT = 0;
-        flyer.released = false;
       }
     } else if (flyer.mode === 'spit' && flyer.job) {
       const job = flyer.job;
@@ -554,26 +585,28 @@ export async function createDrops({ scene, cameraSystem, controllerManager, mapS
       }
     }
     flyer.mesh.position.set(flyer.x, flyer.y, flyer.z);
+    if (flyer.mode === 'blink') flyer.mesh.visible = false;
+    else if (flyer.mode === 'spit' && flyer.spitT < 0.16) {
+      flyer.mesh.visible = true;
+      flyer.mesh.scale.setScalar(0.2 + 0.8 * (flyer.spitT / 0.16));
+    } else {
+      flyer.mesh.visible = true;
+      flyer.mesh.scale.setScalar(1);
+    }
     flyer.mesh.lookAt(cam.x, cam.y, cam.z);
     overlay.bot.x = flyer.x;
     overlay.bot.z = flyer.z;
-    let rowBudget = 24;
-    while (rowCursor < rowQueue.length && rowBudget--) {
-      const next = rowQueue[rowCursor++];
-      buildRow(next.actor, next.prepend);
-    }
-    if (rowCursor >= rowQueue.length) {
-      rowQueue.length = 0;
-      rowCursor = 0;
-    }
-    let builds = 0;
     let labels = 0;
     const now = performance.now() / 1000;
+    const ranked = [];
     for (let i = 0; i < items.length; i++) {
       const actor = items[i];
       const dx = actor.x - cam.x;
       const dz = actor.z - cam.z;
       const dist2 = dx * dx + dz * dz;
+      actor._dist2 = dist2;
+      actor._keep = false;
+      if (!actor.pending && dist2 < BUILD_NEAR * BUILD_NEAR) ranked.push(actor);
       const moving = actor.falling || Math.abs(actor.vx) > 0.02 || Math.abs(actor.vz) > 0.02;
       if (actor.falling) {
         actor.vy -= 12 * dt;
@@ -597,12 +630,19 @@ export async function createDrops({ scene, cameraSystem, controllerManager, mapS
         separate(actor);
         actor.y = groundY(cm, { ...actor.drop, x: actor.x, z: actor.z });
       }
-      const close = dist2 < BUILD_NEAR * BUILD_NEAR || actor.falling;
-      if (!actor.mesh && !actor.pending && close && builds < 4) {
+    }
+    ranked.sort((a, b) => a._dist2 - b._dist2);
+    const keepCount = Math.min(CARD_CAP, ranked.length);
+    for (let i = 0; i < keepCount; i++) ranked[i]._keep = true;
+    let builds = 0;
+    for (let i = 0; i < items.length; i++) {
+      const actor = items[i];
+      const dist2 = actor._dist2;
+      if (!actor.mesh && !actor.pending && (actor.falling || actor._keep) && builds < 4) {
         ensureCard(actor);
         builds++;
       }
-      if (actor.mesh && !actor.pending && !actor.falling && dist2 > BUILD_FAR * BUILD_FAR) releaseCard(actor);
+      if (actor.mesh && !actor.pending && !actor.falling && (dist2 > BUILD_FAR * BUILD_FAR || !actor._keep)) releaseCard(actor);
       if (!actor.mesh) continue;
       actor.mesh.visible = !actor.pending;
       actor.mesh.position.set(actor.x, actor.y + actor.worldH * 0.5, actor.z);
@@ -723,6 +763,15 @@ export async function createDrops({ scene, cameraSystem, controllerManager, mapS
   let lastFetch = Date.now();
   let polling = false;
   let pollTimer = 0;
+  let remoteEtag = remoteDoc.etag || null;
+  let remoteModified = remoteDoc.lastModified || null;
+  let remoteHash = remoteDoc.hash || null;
+  function rememberRemote(doc) {
+    if (!doc) return;
+    if (doc.etag) remoteEtag = doc.etag;
+    if (doc.lastModified) remoteModified = doc.lastModified;
+    if (doc.hash) remoteHash = doc.hash;
+  }
   function schedulePoll() {
     clearTimeout(pollTimer);
     if (document.hidden) return;
@@ -734,14 +783,41 @@ export async function createDrops({ scene, cameraSystem, controllerManager, mapS
     polling = true;
     lastFetch = Date.now();
     clearTimeout(pollTimer);
-    fetchRemoteDocument(DROPS_REMOTE_URL, { timeoutMs: DROPS_FETCH_TIMEOUT_MS }).then((again) => {
-      remote = acceptRemoteRecords(again, {
+    fetchRemoteDocument(DROPS_REMOTE_URL, {
+      timeoutMs: DROPS_FETCH_TIMEOUT_MS,
+      meta: true,
+      etag: remoteEtag,
+      modified: remoteModified,
+      hash: remoteHash
+    }).then((doc) => {
+      rememberRemote(doc);
+      if (!doc || doc.notModified) return;
+      remote = acceptRemoteRecords(doc.rows, {
         ids: knownIds,
         accepted: remote.accepted,
         warn: (message) => console.warn(message),
         warned
       });
-      for (let i = 0; i < remote.taken.length; i++) addActor(remote.taken[i], { prepend: true });
+      const batch = remote.taken.slice().sort(compareCreated);
+      const occupied = items.map((actor) => ({ x: actor.x, z: actor.z }));
+      for (let i = 0; i < batch.length; i++) {
+        const drop = batch[i];
+        const spot = nearestFree(drop.x, drop.z, CITY_BOUNDS, walkableAt, occupied, undefined, drop);
+        drop.x = spot.x;
+        drop.z = spot.z;
+        occupied.push(spot);
+      }
+      const deliverIds = new Set();
+      let slots = DELIVER_CAP - countPending();
+      const newestFirst = batch.slice().sort((a, b) => compareCreated(b, a));
+      for (let i = 0; i < newestFirst.length && slots > 0; i++) {
+        deliverIds.add(newestFirst[i].id);
+        slots -= 1;
+      }
+      for (let i = 0; i < batch.length; i++) {
+        const drop = batch[i];
+        addActor(drop, { prepend: true, deliver: deliverIds.has(drop.id) });
+      }
     }).catch(() => {
       /* remote stays optional */
     }).finally(() => {

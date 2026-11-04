@@ -5,6 +5,7 @@ const test = require('node:test');
 const { loadModule } = require('./helpers/module.cjs');
 
 const source = readFileSync(join(__dirname, '../js/nyc-map.js'), 'utf8');
+const layout = loadModule(readFileSync(join(__dirname, '../js/drop-layout.js'), 'utf8'));
 
 test('surveyed building courtyards remain holes in the map footprint layer', () => {
   class Path2D {
@@ -18,7 +19,8 @@ test('surveyed building courtyards remain holes in the map footprint layer', () 
     imports: {
       './nyc-geodata.js': { GEO: {} },
       './city-config.js': { ROADS: [] },
-      './map-icons.js': { drawGrokIcon() {}, drawDropIcon() {} }
+      './map-icons.js': { drawGrokIcon() {}, drawDropIcon() {} },
+      './drop-layout.js': layout
     }
   });
   const ring = (x0, z0, x1, z1) => [{ x: x0, z: z0 }, { x: x1, z: z0 }, { x: x1, z: z1 }, { x: x0, z: z1 }];
@@ -39,7 +41,8 @@ for (const [width, height, dpr] of [[500, 300, 1], [320, 180, 1.5], [1920, 1080,
       imports: {
       './nyc-geodata.js': { GEO: {} },
       './city-config.js': { ROADS: [] },
-      './map-icons.js': { drawGrokIcon() {}, drawDropIcon() {} }
+      './map-icons.js': { drawGrokIcon() {}, drawDropIcon() {} },
+      './drop-layout.js': layout
     }
     });
     const map = Object.create(NYCMapSystem.prototype);
@@ -136,7 +139,8 @@ function mapHarness() {
     imports: {
       './nyc-geodata.js': { GEO: { frame: {} } },
       './city-config.js': config,
-      './map-icons.js': { drawGrokIcon() {}, drawDropIcon() {} }
+      './map-icons.js': { drawGrokIcon() {}, drawDropIcon() {} },
+      './drop-layout.js': layout
     }
   });
   const teleports = [], toggles = [];

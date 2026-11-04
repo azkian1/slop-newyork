@@ -7,7 +7,8 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { landingFor } from '../js/drop-place.js';
+import { CITY_BOUNDS, landingFor } from '../js/drop-place.js';
+import { nearestFree } from '../js/drop-layout.js';
 import { resolveDropHeight } from '../js/drop-size.js';
 import { sanitizeText, validateDrop, MAX_HANDLE, MAX_NAME, MAX_TEXT } from '../js/drop-schema.js';
 
@@ -28,6 +29,13 @@ export function buildDrop(payload, existing) {
   if (existing.some((row) => row.sourceId === sourceId)) errors.push(`duplicate source id ${sourceId}`);
   const height = resolveDropHeight({ name, request, height: payload.height });
   const spot = landingFor(sourceId);
+  const occupied = [];
+  for (let i = 0; i < existing.length; i++) {
+    const row = existing[i];
+    if (row && Number.isFinite(row.x) && Number.isFinite(row.z)) occupied.push({ x: row.x, z: row.z });
+  }
+  // Same spiral as the client. The browser also rejects points that are not walkable.
+  const clear = nearestFree(spot.x, spot.z, CITY_BOUNDS, () => true, occupied);
   const drop = {
     id: `drop-${sourceId.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase() || 'item'}`,
     author,
@@ -36,8 +44,8 @@ export function buildDrop(payload, existing) {
     name,
     created: payload.created || new Date().toISOString(),
     height,
-    x: spot.x,
-    z: spot.z,
+    x: clear.x,
+    z: clear.z,
     yaw: spot.yaw,
     surface: spot.surface,
     spec: payload.spec

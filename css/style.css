@@ -1463,6 +1463,7 @@ body.touch-enabled .pop-item { min-height: 44px; }
   display: flex;
   flex-direction: column;
 }
+.drop-log-sentinel { height: 1px; flex: none; }
 .drop-log.is-closed .drop-log-list { display: none; }
 .drop-row {
   display: flex;

@@ -1,5 +1,6 @@
 import { GEO } from './nyc-geodata.js';
 import { drawGrokIcon, drawDropIcon } from './map-icons.js';
+import { CLUSTER_PX, MAX_DROP_ICONS, clusterIcons } from './drop-layout.js';
 import {
   ROADS,
   BLOCKS,
@@ -408,6 +409,23 @@ function drawRoute(ctx, x0, y0, x1, y1, width) {
   ctx.stroke();
 }
 
+function drawDropCluster(ctx, x, y, count, r) {
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(20, 16, 8, 0.88)';
+  ctx.fill();
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = '#f2d48a';
+  ctx.stroke();
+  ctx.fillStyle = '#f6e7b2';
+  ctx.font = 'bold 11px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(count > 99 ? '99+' : String(count), x, y + 0.5);
+  ctx.restore();
+}
+
 // Waypoint: a taxi-yellow target
 function drawWaypoint(ctx, x, y, r) {
   ctx.fillStyle = MAP.halo;
@@ -502,15 +520,25 @@ class NYCMapSystem {
       const halfW = w * 0.5;
       const halfH = h * 0.5;
       const icon = mode === 'mini' ? 16 : 14;
-      let thumbs = 0;
+      const visible = [];
       for (let i = 0; i < drops.length; i++) {
         const drop = drops[i];
         const x = toX(drop.x);
         const y = toY(drop.z);
         if (Math.abs(x) > halfW || Math.abs(y) > halfH) continue;
-        const thumb = mode !== 'dot' && thumbs < 36 ? drop.thumb : null;
+        visible.push({ x, y, thumb: mode === 'dot' ? null : drop.thumb });
+      }
+      const clusters = clusterIcons(visible, CLUSTER_PX, MAX_DROP_ICONS);
+      let thumbs = 0;
+      for (let i = 0; i < clusters.length; i++) {
+        const cluster = clusters[i];
+        if (cluster.count > 1) {
+          drawDropCluster(ctx, cluster.x, cluster.y, cluster.count, mode === 'dot' ? 8 : 12);
+          continue;
+        }
+        const thumb = cluster.thumb && thumbs < 36 ? cluster.thumb : null;
         if (thumb) thumbs++;
-        drawDropIcon(ctx, x, y, thumb, mode === 'dot' ? 6 : icon);
+        drawDropIcon(ctx, cluster.x, cluster.y, thumb, mode === 'dot' ? 6 : icon);
       }
     }
     const bot = overlay.bot;

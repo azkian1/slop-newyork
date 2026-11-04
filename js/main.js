@@ -65,7 +65,9 @@ async function initApp() {
   renderer.setSize(window.innerWidth, window.innerHeight);
   const LITE = new URLSearchParams(location.search).has('lite'); // software-rendering test mode: no shadows / post FX
   renderer.shadowMap.enabled = !LITE;
-  renderer.lighting = new ClusteredLighting(256, 32, 28, 48);
+  // Lite skips clustered lighting. With no shadow lights the generated WGSL struct is empty,
+  // and "structures must have at least one member" fires even when the city has no drops.
+  if (!LITE) renderer.lighting = new ClusteredLighting(256, 32, 28, 48);
   container.appendChild(renderer.domElement);
 
   // Start-up phase timings (logged once as "[init] ...") to keep load-time regressions traceable

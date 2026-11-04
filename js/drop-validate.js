@@ -1,6 +1,7 @@
 // Whitelist for drop records. One bad field rejects the whole record.
 // Remote files are untrusted. Local demo records go through the same gate.
 
+import { hashText } from './drop-layout.js';
 import { CITY_BOUNDS } from './drop-place.js';
 import { MAX_WORLD_HEIGHT, MAX_WORLD_WIDTH, cardEdgeFor, worldCardSize } from './drop-size.js';
 
@@ -133,17 +134,44 @@ export function parseRemoteDocument(text) {
   }
 }
 
-async function fetchRemoteDocument(url, { fetchImpl = globalThis.fetch, timeoutMs = 30000 } = {}) {
+function responseHeader(res, name) {
+  const headers = res && res.headers;
+  if (!headers || typeof headers.get !== 'function') return null;
+  return headers.get(name) || null;
+}
+
+function remoteResult(meta, rows, notModified, etag, lastModified, hash) {
+  if (!meta) return rows;
+  return { rows, notModified, etag, lastModified, hash };
+}
+
+// `meta: true` reports validators so a poll can send If-None-Match / If-Modified-Since
+// and skip a rebuild on 304 or on a body whose text hash has not changed.
+// The default return is still the row array.
+async function fetchRemoteDocument(url, { fetchImpl = globalThis.fetch, timeoutMs = 30000, meta = false, etag = null, modified = null, hash = null } = {}) {
   const Timeout = globalThis.AbortController;
   const timeout = Timeout ? new Timeout() : null;
   const timer = timeout && globalThis.setTimeout ? globalThis.setTimeout(() => timeout.abort(), timeoutMs) : null;
+  const empty = () => remoteResult(meta, [], false, null, null, null);
   try {
-    const res = await fetchImpl(url, { cache: 'no-store', signal: timeout ? timeout.signal : undefined });
-    if (!res || !res.ok) return [];
+    const init = { cache: 'no-store', signal: timeout ? timeout.signal : undefined };
+    if (etag || modified) {
+      init.headers = {};
+      if (etag) init.headers['If-None-Match'] = etag;
+      if (modified) init.headers['If-Modified-Since'] = modified;
+    }
+    const res = await fetchImpl(url, init);
+    if (res && res.status === 304) return remoteResult(meta, [], true, etag || null, modified || null, hash || null);
+    if (!res || !res.ok) return empty();
     const text = await res.text();
-    return parseRemoteDocument(text) || [];
+    const nextHash = hashText(text);
+    const nextEtag = responseHeader(res, 'etag') || etag || null;
+    const nextModified = responseHeader(res, 'last-modified') || modified || null;
+    if (hash && hash === nextHash) return remoteResult(meta, [], true, nextEtag, nextModified, nextHash);
+    const rows = parseRemoteDocument(text) || [];
+    return remoteResult(meta, rows, false, nextEtag, nextModified, nextHash);
   } catch {
-    return [];
+    return empty();
   } finally {
     if (timer && globalThis.clearTimeout) globalThis.clearTimeout(timer);
   }
