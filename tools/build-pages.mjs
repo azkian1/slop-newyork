@@ -44,14 +44,16 @@ const preloadBlock = [`./dist/${hashed}`, ...staticParts]
   .map((href) => `  <link rel="modulepreload" href="${href}" />`)
   .join('\n') + '\n';
 html = html.replace('  <!-- One bundled module.', `${preloadBlock}  <!-- One bundled module.`);
+html = html.replace(/(\.\/css\/style\.css)\?v=[^"']+/g, `$1?v=${hash}`);
+html = html.replace(/(assets\/ui\/pill-(?:red|blue)\.png)\?v=[^"']+/g, `$1?v=${hash}`);
 writeFileSync('index.html', html);
 
 const precache = [
   `./dist/${hashed}`,
   './js/building-geodata.bin.gz',
   './js/tree-geodata.bin.gz',
-  './assets/ui/pill-red.png?v=2',
-  './assets/ui/pill-blue.png?v=2',
+  `./assets/ui/pill-red.png?v=${hash}`,
+  `./assets/ui/pill-blue.png?v=${hash}`,
   './assets/ui/avatar-roach.png',
   './assets/ui/avatar-rat.png'
 ];
