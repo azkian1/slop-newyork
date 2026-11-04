@@ -4,7 +4,7 @@ A silly mod of [Slop New York](https://github.com/mrdoob/slop-newyork) by [Mr.do
 
 - Two round portraits on the left switch the skin. The choice is remembered in this browser.
 - Cockroach: W/S crawl (and climb), A/D turn, Space jump / let go. Walk into anything and keep pushing to climb it.
-- Pizza Rat: same crumbs and the same car-sized giant, but no wall climb and no riding people. Space jumps a curb or a bumper. A car roof is a second step up from that ledge, not one leap from the street. Rat by Quaternius (CC0), file `assets/rat.glb`.
+- Pizza Rat: same crumbs and the same car-sized giant, but no wall climb and no riding people. Space jumps a curb (the step is too low to walk up) or a bumper. A car roof is a second step up from that ledge, not one leap from the street. Rat by Quaternius (CC0): [poly.pizza/m/iltq5bVNaV](https://poly.pizza/m/iltq5bVNaV), file `assets/rat.glb` from https://static.poly.pizza/64cb7150-8031-44ab-a0c9-e1529a572b23.glb.
 - You only die from below: a pedestrian's footstep or a car wheel while you are on the street
 - Gold crumbs on the street give 60 s of car speed
 - Red crumbs turn you into a car-sized giant for 30 s (smooth grow and shrink). Car speed, camera pulls back. You cannot be squished while giant. People treat you as a vehicle: they dodge, dive, and run away screaming. Touching someone knocks them down; hitting a car or bus shoves it the way the player's car would. The rat still does not climb walls.

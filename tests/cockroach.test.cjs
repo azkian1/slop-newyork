@@ -8,7 +8,7 @@ const root = join(__dirname, '..');
 const source = readFileSync(join(root, 'js/cockroach.js'), 'utf8');
 const {
   stepGiant, giantFootprint, roachVulnerable, resolveCurb, supportHeight, climbStep, FOOT_REACH,
-  GIANT_TIME, GIANT_SCALE, GIANT_HALF_W, GIANT_HALF_L, carLedges, nextLedge, skinRules, RAT_JUMP_HEIGHT
+  GIANT_TIME, GIANT_SCALE, GIANT_HALF_W, GIANT_HALF_L, carLedges, nextLedge, skinRules, RAT_JUMP_HEIGHT, RAT_STEP
 } = loadModule(source, {
   imports: {
     'three/webgpu': {},
@@ -134,6 +134,7 @@ test('a rat jumps a curb and a bumper, and does not climb walls or people', () =
   assert.equal(skinRules('roach').climbsPeople, true);
   assert.equal(skinRules('rat').climbsWalls, false);
   assert.equal(skinRules('rat').climbsPeople, false);
+  assert.ok(RAT_STEP < 0.22, 'a sidewalk is a jump, not a step');
   assert.ok(RAT_JUMP_HEIGHT > 0.22);
   assert.ok(RAT_JUMP_HEIGHT < 1.2);
   const ledges = carLedges(1.45);

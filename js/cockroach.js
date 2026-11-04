@@ -60,7 +60,7 @@ const FOOT_REACH = 0.028; // nose and flanks, so the shell clears a curb before 
 const RAT_JUMP_HEIGHT = 0.7;
 const RAT_JUMP_VY = Math.sqrt(2 * 9.8 * RAT_JUMP_HEIGHT);
 const RAT_BODY_M = 0.25;
-const RAT_STEP = 0.3;
+const RAT_STEP = 0.1; // below a 0.22 m curb, so the rat has to jump onto the sidewalk
 const SKIN_KEY = 'slop-skin';
 
 function carLedges(roof) {
@@ -377,15 +377,20 @@ function createCockroach({ scene, controllerManager: cm, trafficSystem, cameraSy
   }
   function supportAt(x, z, y) {
     const reach = FOOT_REACH * st.scale;
+    const step = activeStep();
     const hx = Math.sin(p.heading);
     const hz = Math.cos(p.heading);
-    return supportHeight(y, [
+    const samples = [
       surfaceAt(x, z, y),
       surfaceAt(x + hx * reach, z + hz * reach, y),
       surfaceAt(x - hx * reach, z - hz * reach, y),
       surfaceAt(x - hz * reach, z + hx * reach, y),
       surfaceAt(x + hz * reach, z - hx * reach, y)
-    ], activeStep());
+    ];
+    // The cell under the body is a sidewalk once the center crosses the curb.
+    // A rat must jump that rise; the roach still walks it.
+    if (playingRat() && samples[0] > y + step) samples[0] = y;
+    return supportHeight(y, samples, step);
   }
   // Stand on the support before horizontal resolution, so a low deck is a floor and not a wall we get shoved through.
   function plantFeet() {
@@ -1042,26 +1047,49 @@ function createCockroach({ scene, controllerManager: cm, trafficSystem, cameraSy
     ctx.stroke();
   });
   paintedPortrait(ratBtn, (ctx) => {
-    ctx.fillStyle = '#1a1210';
-    ctx.beginPath();
-    ctx.ellipse(46, 50, 22, 16, -0.3, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = '#d9a090';
-    ctx.beginPath();
-    ctx.ellipse(28, 40, 6, 8, -0.4, 0, Math.PI * 2);
-    ctx.ellipse(34, 36, 5, 7, 0.2, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = '#e0b0a4';
-    ctx.lineWidth = 3;
+    ctx.fillStyle = '#e4ddd2';
+    ctx.fillRect(0, 0, 96, 96);
+    ctx.strokeStyle = '#e7b5a8';
+    ctx.lineWidth = 4;
+    ctx.lineCap = 'round';
     ctx.beginPath();
     ctx.moveTo(62, 58);
-    ctx.quadraticCurveTo(84, 78, 78, 86);
+    ctx.quadraticCurveTo(80, 72, 86, 86);
     ctx.stroke();
+    ctx.fillStyle = '#1c1614';
+    ctx.strokeStyle = '#a89890';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.ellipse(52, 54, 24, 13, -0.1, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.ellipse(30, 48, 12, 9, -0.25, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#e7b5a8';
+    ctx.beginPath();
+    ctx.ellipse(26, 38, 4.5, 6, -0.5, 0, Math.PI * 2);
+    ctx.ellipse(34, 36, 3.5, 5, 0.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#111111';
+    ctx.beginPath();
+    ctx.arc(22, 48, 2.4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#e7b5a8';
+    ctx.fillRect(40, 64, 7, 3);
+    ctx.fillRect(58, 65, 7, 3);
     ctx.fillStyle = '#f0c04a';
     ctx.beginPath();
-    ctx.moveTo(58, 48);
-    ctx.lineTo(86, 40);
-    ctx.lineTo(74, 62);
+    ctx.moveTo(18, 52);
+    ctx.lineTo(6, 80);
+    ctx.lineTo(32, 68);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#b3302a';
+    ctx.beginPath();
+    ctx.arc(16, 66, 2.4, 0, Math.PI * 2);
+    ctx.arc(22, 60, 1.8, 0, Math.PI * 2);
     ctx.fill();
   });
   const pizzaMod = import('./pizza-rat.js');
@@ -1158,5 +1186,5 @@ function createCockroach({ scene, controllerManager: cm, trafficSystem, cameraSy
 
 export {
   createCockroach, stepGiant, giantFootprint, roachVulnerable, GIANT_TIME, GIANT_SCALE,
-  GIANT_HALF_W, GIANT_HALF_L, STEP_UP, FOOT_REACH, carLedges, nextLedge, skinRules, RAT_JUMP_HEIGHT
+  GIANT_HALF_W, GIANT_HALF_L, STEP_UP, FOOT_REACH, carLedges, nextLedge, skinRules, RAT_JUMP_HEIGHT, RAT_STEP
 };

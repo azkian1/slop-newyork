@@ -110,43 +110,15 @@ export function buildPizza(THREE, { L = 5.4, W = 3.7, t = 0.13, seed = 7 } = {})
   return { mesh, bones, L, W };
 }
 
-function tintExtremities(mesh, material) {
-  const geo = mesh.geometry;
-  const index = geo.attributes.skinIndex;
-  const weight = geo.attributes.skinWeight;
-  const skeleton = mesh.skeleton;
-  if (!index || !weight || !skeleton) return;
-  const names = skeleton.bones.map((bone) => bone.name || '');
-  const color = new Float32Array(index.count * 3);
-  const dark = [0.075, 0.062, 0.058];
-  const pink = [0.86, 0.52, 0.48];
-  for (let i = 0; i < index.count; i++) {
-    let t = 0;
-    for (let c = 0; c < 4; c++) {
-      const w = weight.getComponent(i, c);
-      if (w <= 0) continue;
-      const name = names[index.getComponent(i, c)] || '';
-      if (/Tail|Foot|Nose|Ear/.test(name)) t += w;
-    }
-    color[i * 3] = dark[0] + (pink[0] - dark[0]) * t;
-    color[i * 3 + 1] = dark[1] + (pink[1] - dark[1]) * t;
-    color[i * 3 + 2] = dark[2] + (pink[2] - dark[2]) * t;
-  }
-  geo.setAttribute('color', new THREE.Float32BufferAttribute(color, 3));
-  material.vertexColors = true;
-}
-
 export function makePizzaRat(gltf, THREE, opts = {}) {
   const root = new THREE.Group(); const model = gltf.scene; root.add(model);
   model.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.frustumCulled = false; } });
-  // darken body a bit (model's Grey is already near-black brown); keep Pink.
-  // A single-material re-export is painted the same way: dark coat, pink tail and feet.
+  // Grey is the coat. Pink is the ears, feet, and tail already in the file.
   model.traverse((o) => {
     if (!o.isMesh) return;
     for (const m of [].concat(o.material)) {
-      if (m.name === 'Grey' || m.name === 'critter') { m.color.setRGB(0.075, 0.062, 0.058); m.roughness = 0.75; }
+      if (m.name === 'Grey') { m.color.setRGB(0.075, 0.062, 0.058); m.roughness = 0.75; }
       if (m.name === 'Pink') m.color.multiplyScalar(0.85);
-      if (m.name === 'critter') tintExtremities(o, m);
     }
   });
   const mixer = new THREE.AnimationMixer(model);
@@ -180,8 +152,9 @@ export function makePizzaRat(gltf, THREE, opts = {}) {
   const H = wp(head), E = wp(headEnd), d = E.clone().sub(H), hl = d.length();
   const fwd = d.clone().normalize(), up = new THREE.Vector3(0, 1, 0), side = new THREE.Vector3().crossVectors(up, fwd).normalize();
   const upL = new THREE.Vector3().crossVectors(fwd, side).normalize();
-  const e = opts.eyes || { along: 0.5, up: 0.32, side: 0.3, r: 0.13 };
-  const eyeMat = new THREE.MeshStandardMaterial({ color: 0x020202, roughness: 0.38, metalness: 0 }); // glossy-ish black, no white glint
+  // Larger than the studio close-up so the eyes still read from the chase camera. No catchlight.
+  const e = opts.eyes || { along: 0.5, up: 0.32, side: 0.3, r: 0.28 };
+  const eyeMat = new THREE.MeshStandardMaterial({ color: 0x050505, roughness: 0.18, metalness: 0 });
   for (const s of [-1, 1]) {
     const eye = new THREE.Group();
     const ball = new THREE.Mesh(new THREE.SphereGeometry(e.r * hl, 24, 16), eyeMat); ball.scale.set(1, 1, 0.85); eye.add(ball);
@@ -214,7 +187,9 @@ export function makePizzaRat(gltf, THREE, opts = {}) {
     prev.p = pw;
     b0.getWorldQuaternion(tmpQ); const aL = acc.applyQuaternion(tmpQ.invert());
     const down = new THREE.Vector3(0, -1, 0).applyQuaternion(tmpQ); // gravity in pizza space
-    const k = 0.0035 / (opts.pizzaScale ?? 0.62);
+    // k and the floor gap were tuned on the unscaled ~7 unit rat. The city scales that
+    // model down, so both follow the root's world scale or the slice stands straight up.
+    const k = (0.0035 / (opts.pizzaScale ?? 0.62)) * unitScale();
     st.forEach((s, i) => {
       if (i === 0) return;
       const gain = i === 1 ? 1 : 1.4, w = i === 1 ? 13 : 10, z = 0.22;
@@ -227,7 +202,12 @@ export function makePizzaRat(gltf, THREE, opts = {}) {
     });
   }
   // ground constraint: bend pizza bones up until no skinned vertex is below the floor
-  const eps = opts.floorEps ?? 0.012;
+  const baseEps = opts.floorEps ?? 0.012;
+  function unitScale() {
+    const e = root.matrixWorld.elements;
+    const s = Math.hypot(e[0], e[1], e[2]);
+    return s > 1e-8 ? s : 1;
+  }
   const geoSI = P.mesh.geometry.attributes.skinIndex, geoSW = P.mesh.geometry.attributes.skinWeight;
   const sets = [[], [], []];
   for (let i = 0; i < geoSI.count; i++) for (let c = 0; c < 4; c++) if (geoSW.getComponent(i, c) > 0.001) { const bi = geoSI.getComponent(i, c); for (let k = 1; k <= bi; k++) if (!sets[k].includes(i) ) sets[k].push(i); }
@@ -237,6 +217,7 @@ export function makePizzaRat(gltf, THREE, opts = {}) {
   function groundConstrain() {
     for (let i = 1; i <= 2; i++) {
       const s = st[i], b = P.bones[i];
+      const eps = baseEps * unitScale();
       if (minY(sets[i]) >= api.floorY + eps) continue;
       let lo = -1.2, hi = s.ax; // lo lifts tip (negative = bend up)
       for (let it = 0; it < 10; it++) { const mid = (lo + hi) / 2; b.rotation.x = mid; if (minY(sets[i]) >= api.floorY + eps) lo = mid; else hi = mid; }
