@@ -120,7 +120,7 @@ export async function createDrops({ scene, cameraSystem, controllerManager, mapS
   list.className = 'drop-log-list';
   panel.append(toggle, list);
   document.body.appendChild(panel);
-  const PANEL_KEY = 'slop-drops-open';
+  const PANEL_KEY = 'slop-drops-panel';
   function setDropsOpen(open) {
     panel.classList.toggle('is-closed', !open);
     toggle.setAttribute('aria-expanded', String(open));

@@ -986,13 +986,14 @@ function createCockroach({ scene, controllerManager: cm, trafficSystem, cameraSy
     button.setAttribute('aria-label', label);
     const img = document.createElement('img');
     img.alt = '';
+    img.src = new URL(id === 'rat' ? 'assets/ui/avatar-rat.png' : 'assets/ui/avatar-roach.png', document.baseURI).href;
     button.appendChild(img);
     button.addEventListener('click', () => setSkin(id));
     picker.appendChild(button);
     return button;
   }
-  const roachBtn = skinButton('roach', 'Cockroach');
-  const ratBtn = skinButton('rat', 'Pizza Rat');
+  skinButton('roach', 'Cockroach');
+  skinButton('rat', 'Pizza Rat');
   document.body.appendChild(picker);
   function markSkin() {
     const id = playingRat() ? 'rat' : 'roach';
@@ -1022,76 +1023,6 @@ function createCockroach({ scene, controllerManager: cm, trafficSystem, cameraSy
     ratHolder.visible = st.mode !== 'dead' && playingRat();
     markSkin();
   }
-  function paintedPortrait(button, draw) {
-    const canvas = document.createElement('canvas');
-    canvas.width = 96;
-    canvas.height = 96;
-    const ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#16120e';
-    ctx.fillRect(0, 0, 96, 96);
-    draw(ctx);
-    button.querySelector('img').src = canvas.toDataURL('image/png');
-  }
-  paintedPortrait(roachBtn, (ctx) => {
-    ctx.fillStyle = '#4a1604';
-    ctx.beginPath();
-    ctx.ellipse(48, 52, 16, 28, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = '#5a2a10';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(40, 28);
-    ctx.quadraticCurveTo(24, 8, 16, 14);
-    ctx.moveTo(56, 28);
-    ctx.quadraticCurveTo(72, 8, 80, 14);
-    ctx.stroke();
-  });
-  paintedPortrait(ratBtn, (ctx) => {
-    ctx.fillStyle = '#e4ddd2';
-    ctx.fillRect(0, 0, 96, 96);
-    ctx.strokeStyle = '#e7b5a8';
-    ctx.lineWidth = 4;
-    ctx.lineCap = 'round';
-    ctx.beginPath();
-    ctx.moveTo(62, 58);
-    ctx.quadraticCurveTo(80, 72, 86, 86);
-    ctx.stroke();
-    ctx.fillStyle = '#1c1614';
-    ctx.strokeStyle = '#a89890';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.ellipse(52, 54, 24, 13, -0.1, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.ellipse(30, 48, 12, 9, -0.25, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-    ctx.fillStyle = '#e7b5a8';
-    ctx.beginPath();
-    ctx.ellipse(26, 38, 4.5, 6, -0.5, 0, Math.PI * 2);
-    ctx.ellipse(34, 36, 3.5, 5, 0.2, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = '#111111';
-    ctx.beginPath();
-    ctx.arc(22, 48, 2.4, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = '#e7b5a8';
-    ctx.fillRect(40, 64, 7, 3);
-    ctx.fillRect(58, 65, 7, 3);
-    ctx.fillStyle = '#f0c04a';
-    ctx.beginPath();
-    ctx.moveTo(18, 52);
-    ctx.lineTo(6, 80);
-    ctx.lineTo(32, 68);
-    ctx.closePath();
-    ctx.fill();
-    ctx.fillStyle = '#b3302a';
-    ctx.beginPath();
-    ctx.arc(16, 66, 2.4, 0, Math.PI * 2);
-    ctx.arc(22, 60, 1.8, 0, Math.PI * 2);
-    ctx.fill();
-  });
   const pizzaMod = import('./pizza-rat.js');
   const loaderMod = import('three/addons/loaders/GLTFLoader.js');
   Promise.all([pizzaMod, loaderMod]).then(([{ makePizzaRat }, { GLTFLoader }]) => {

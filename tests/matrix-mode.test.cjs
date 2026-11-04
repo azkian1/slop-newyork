@@ -50,7 +50,10 @@ test('the blue and red pills swap mesh materials for a world-space glyph shader'
   assert.match(main, /applyMatrix\(false\)/);
   assert.match(html, /id="pill-blue"/);
   assert.match(html, /id="pill-red"/);
-  assert.match(html, /Blue pill: enter the Matrix/);
+  assert.match(html, /Enter the Matrix/);
+  assert.match(html, /Back to reality/);
+  assert.match(html, /pill-red\.png/);
+  assert.match(html, /pill-blue\.png/);
   assert.match(map, /KeyM' && e\.shiftKey/);
   assert.match(main, /matrixFromSearch\(location\.search\)/);
   assert.match(main, /matrixMode\.setEnabled\(scene/);

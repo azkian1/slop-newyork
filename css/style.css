@@ -1531,10 +1531,8 @@ body.matrix-mode .drop-log { border-color: #1f8f3a; }
   height: 100%;
   object-fit: cover;
   display: block;
-  background: radial-gradient(circle at 50% 42%, #3a2a22 0%, #16120e 72%);
+  background: transparent;
 }
-.skin-btn[data-skin="roach"] img { background: radial-gradient(circle at 50% 45%, #6a3418 0%, #1a0c06 70%); }
-.skin-btn[data-skin="rat"] img { background: #e4ddd2; }
 .skin-btn:hover { border-color: rgba(255, 255, 255, 0.4); }
 .skin-btn.is-active {
   border-color: var(--taxi);
@@ -1542,32 +1540,37 @@ body.matrix-mode .drop-log { border-color: #1f8f3a; }
 }
 .matrix-pills {
   display: flex;
-  gap: 8px;
+  gap: 10px;
+  align-items: center;
   pointer-events: auto;
 }
 .matrix-pill {
-  height: 36px;
-  padding: 0 16px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  background: rgba(16, 17, 20, 0.82);
-  color: #fff;
-  font: 700 13px/1 var(--font-sans);
-  letter-spacing: 0.01em;
+  width: 76px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  line-height: 0;
 }
-.matrix-pill.is-blue { color: #d7ecff; }
-.matrix-pill.is-red { color: #ffd0cc; }
-.matrix-pill.is-blue:hover,
-.matrix-pill.is-blue.is-active {
-  background: #1d4ed8;
-  border-color: #93c5fd;
-  color: #fff;
+.matrix-pill img {
+  width: 100%;
+  height: auto;
+  display: block;
+  transition: transform 0.16s var(--ease-out), filter 0.16s ease;
 }
-.matrix-pill.is-red:hover,
-.matrix-pill.is-red.is-active {
-  background: #b91c1c;
-  border-color: #fca5a5;
-  color: #fff;
+.matrix-pill:hover img {
+  transform: translateY(-3px);
+  filter: drop-shadow(0 8px 10px rgba(255, 255, 255, 0.28));
+}
+.matrix-pill.is-dim {
+  opacity: 0.38;
+}
+.matrix-pill.is-dim:hover img {
+  transform: none;
+  filter: none;
+}
+@media (max-width: 640px) {
+  .matrix-pill { width: 64px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

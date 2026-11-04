@@ -275,8 +275,8 @@ async function initApp() {
     document.body.classList.toggle('matrix-mode', on);
     const blue = document.getElementById('pill-blue');
     const red = document.getElementById('pill-red');
-    if (blue) blue.classList.toggle('is-active', on);
-    if (red) red.classList.toggle('is-active', !on);
+    if (blue) blue.classList.toggle('is-dim', on);
+    if (red) red.classList.toggle('is-dim', !on);
   };
   const pillBlue = document.getElementById('pill-blue');
   const pillRed = document.getElementById('pill-red');
