@@ -1547,27 +1547,35 @@ body.matrix-mode .drop-log { border-color: #1f8f3a; }
 }
 .matrix-pills {
   display: flex;
-  gap: 0;
+  gap: 12px;
   align-items: center;
   pointer-events: auto;
 }
 .matrix-pill {
-  width: 114px;
-  margin: 0 -12px;
+  position: relative;
+  width: 76px;
+  height: 36px;
+  margin: 0;
   padding: 0;
   border: 0;
   border-radius: 0;
   background: transparent;
   line-height: 0;
+  overflow: visible;
 }
 .matrix-pill img {
-  width: 100%;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 120px;
+  max-width: none;
   height: auto;
-  display: block;
+  transform: translate(-50%, -52%);
+  pointer-events: none;
   transition: transform 0.16s var(--ease-out), filter 0.16s ease;
 }
 .matrix-pill:hover img {
-  transform: translateY(-3px);
+  transform: translate(-50%, calc(-52% - 3px));
   filter: brightness(1.12);
 }
 .matrix-pill.is-dim {
@@ -1578,7 +1586,9 @@ body.matrix-mode .drop-log { border-color: #1f8f3a; }
   filter: none;
 }
 @media (max-width: 640px) {
-  .matrix-pill { width: 96px; margin: 0 -10px; }
+  .matrix-pills { gap: 10px; }
+  .matrix-pill { width: 64px; height: 30px; }
+  .matrix-pill img { width: 102px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

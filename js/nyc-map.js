@@ -574,13 +574,14 @@ class NYCMapSystem {
     }
 
     window.addEventListener('keydown', (e) => {
-      if (e.code === 'Escape' && this.isFullMapOpen) {
+      if ((e.key === 'Escape' || e.code === 'Escape') && this.isFullMapOpen) {
+        e.preventDefault();
         this.toggleFullMap(false);
       } else if (e.code === 'KeyM' && e.shiftKey && !e.repeat && !e.metaKey && !e.ctrlKey && !e.altKey && !isTypingInField(e)) {
         // Bare M is Matrix mode (main.js). Shift+M still opens the street map.
         this.toggleFullMap(!this.isFullMapOpen);
       }
-    });
+    }, true);
 
     if (this.fullCanvas) {
       this.fullCanvas.style.touchAction = 'none';

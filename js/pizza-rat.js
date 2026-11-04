@@ -117,8 +117,21 @@ export function makePizzaRat(gltf, THREE, opts = {}) {
   model.traverse((o) => {
     if (!o.isMesh) return;
     for (const m of [].concat(o.material)) {
-      if (m.name === 'Grey') { m.color.setRGB(0.075, 0.062, 0.058); m.roughness = 0.75; }
-      if (m.name === 'Pink') m.color.multiplyScalar(0.85);
+      if (m.name === 'Grey') {
+        m.color.setRGB(0.075, 0.062, 0.058);
+        m.roughness = 0.75;
+        m.metalness = 0;
+        m.emissive?.setRGB(0, 0, 0);
+        m.emissiveIntensity = 0;
+        m.envMapIntensity = 0;
+        m.vertexColors = false;
+        m.map = null;
+      }
+      if (m.name === 'Pink') {
+        m.color.multiplyScalar(0.85);
+        m.metalness = 0;
+        m.vertexColors = false;
+      }
     }
   });
   const mixer = new THREE.AnimationMixer(model);
@@ -173,6 +186,26 @@ export function makePizzaRat(gltf, THREE, opts = {}) {
   holder.rotateY(-p.yaw); holder.rotateX(p.tiltDown);
   const ps = opts.pizzaScale ?? 0.62; P.mesh.scale.setScalar(ps); P.mesh.position.x = p.crustFwd * P.W * ps;
   holder.add(P.mesh); root.add(holder); holder.updateMatrixWorld(true); head.attach(holder);
+  // The head inherits the armature scale. Rebind so the slice is not stretched along the crust.
+  holder.updateMatrixWorld(true);
+  P.mesh.bind(P.mesh.skeleton);
+  let boundScale = 0;
+  function rebindRest() {
+    const saved = P.bones.map((b) => b.rotation.clone());
+    for (const b of P.bones) b.rotation.set(0, 0, 0);
+    P.mesh.updateMatrixWorld(true);
+    P.mesh.bind(P.mesh.skeleton);
+    P.bones.forEach((b, i) => b.rotation.copy(saved[i]));
+  }
+  function syncScale() {
+    root.updateMatrixWorld(true);
+    const e = root.matrixWorld.elements;
+    const s = Math.hypot(e[0], e[1], e[2]);
+    if (s > 1e-8 && Math.abs(s - boundScale) / s > 0.02) {
+      rebindRest();
+      boundScale = s;
+    }
+  }
 
   // spring state per pizza bone
   const st = P.bones.map(() => ({ ax: 0, ay: 0, vx: 0, vy: 0 }));
@@ -231,7 +264,7 @@ export function makePizzaRat(gltf, THREE, opts = {}) {
     headWorld: () => wp(head),
     reset(clip = 'idle') { mixer.stopAllAction(); actions[clip].reset().play(); mixer.setTime(0); st.forEach((s, i) => { s.ax = sag[i] || 0; s.ay = s.vx = s.vy = 0; }); prev.p = null; prev.v.set(0, 0, 0); for (let i = 0; i < 30; i++) { mixer.update(0); root.updateMatrixWorld(true); stepSpring(1 / 30); groundConstrain(); } },
     crossfade(clip, dur = 0.3) { const nx = actions[clip] || actions.idle; const cur = Object.values(actions).find((a) => a.isRunning()); nx.reset().play(); if (cur && cur !== nx) cur.crossFadeTo(nx, dur, false); },
-    update(dt) { mixer.update(dt); root.updateMatrixWorld(true); stepSpring(dt); groundConstrain(); },
+    update(dt) { syncScale(); mixer.update(dt); root.updateMatrixWorld(true); stepSpring(dt); groundConstrain(); },
   };
   const b2 = new THREE.Box3().setFromObject(model); b2.getCenter(api.center);
   return api;
