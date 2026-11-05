@@ -124,7 +124,7 @@ test('the game drops the per-browser seen list and wires the new rules', () => {
   assert.match(map, /clusterIcons\(/);
   assert.match(main, /if \(!LITE\) renderer\.lighting = new ClusteredLighting/);
   assert.match(tool, /nearestFree\(/);
-  assert.match(sw, /drops1/);
+  assert.match(sw, /paint1/);
 });
 
 test('add-drop keeps a new landing off an existing drop', async () => {

@@ -5,6 +5,46 @@ import { rngFor } from './drop-rng.js';
 import { CARD_MAX_EDGE, cardPixels } from './drop-size.js';
 
 const INK = 'rgb(15,15,15)';
+// Minor span (meters) at which a shape keeps the original bold outline.
+// Smaller shapes (eyes, muzzle, nested balls) scale toward a 1 px stroke.
+const BOLD_SPAN = 0.5;
+
+export function shapeSpan(shape) {
+  if (!shape || typeof shape !== 'object') return 0;
+  if (shape.type === 'ellipse') return Math.min(Math.abs(shape.rx) || 0, Math.abs(shape.ry) || 0);
+  if (shape.type === 'rect') return Math.min(Math.abs(shape.x1 - shape.x0), Math.abs(shape.y1 - shape.y0));
+  const pts = shape.points;
+  if (!Array.isArray(pts) || !pts.length) return 0;
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (let i = 0; i < pts.length; i++) {
+    const x = pts[i][0];
+    const y = pts[i][1];
+    if (x < minX) minX = x;
+    if (x > maxX) maxX = x;
+    if (y < minY) minY = y;
+    if (y > maxY) maxY = y;
+  }
+  return Math.min(maxX - minX, maxY - minY);
+}
+
+// Today's stroke is Math.max(2, 4 * (px / 100)), for every shape. Large shapes
+// still get that. A smaller span shrinks it, and nothing goes under 1 px.
+export function outlineWidth(span, px) {
+  const bold = Math.max(2, 4 * (px / 100));
+  if (!(span > 0) || span >= BOLD_SPAN) return bold;
+  return Math.max(1, bold * (span / BOLD_SPAN));
+}
+
+// Wobble in meters. Large outlines stay at 0.05. A small feature only jitters
+// a fraction of its own span, so the stroke cannot swallow the fill.
+export function outlineJitter(span) {
+  const full = 0.05;
+  if (!(span > 0) || span >= BOLD_SPAN) return full;
+  return Math.min(full, span * 0.12);
+}
 
 function ellipsePoints(cx, cy, rx, ry, n = 28) {
   const pts = [];
@@ -62,12 +102,15 @@ export function paintDrop(spec, author, seedKey, maxEdge = CARD_MAX_EDGE) {
   for (const shape of spec.shapes) {
     const pts = shapePoints(shape);
     const closed = shape.type !== 'line';
-    const fillPts = jitter(pts, 0.04, rng);
-    const linePts = jitter(pts, 0.05, rng);
+    const span = shapeSpan(shape);
+    const wobble = outlineJitter(span);
+    const detail = span > 0 && span < BOLD_SPAN ? span / BOLD_SPAN : 1;
+    const fillPts = jitter(pts, wobble * 0.8, rng);
+    const linePts = jitter(pts, wobble, rng);
     const color = hot(shape.color);
     if (closed) {
-      const offX = (rng() * 2 - 1) * 6 * (px / 100);
-      const offY = (rng() * 2 - 1) * 6 * (px / 100);
+      const offX = (rng() * 2 - 1) * 6 * (px / 100) * detail;
+      const offY = (rng() * 2 - 1) * 6 * (px / 100) * detail;
       const fill = toPx(fillPts);
       ctx.beginPath();
       fill.forEach(([x, y], i) => (i ? ctx.lineTo(x + offX, y + offY) : ctx.moveTo(x + offX, y + offY)));
@@ -80,7 +123,7 @@ export function paintDrop(spec, author, seedKey, maxEdge = CARD_MAX_EDGE) {
     line.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
     if (closed) ctx.closePath();
     ctx.strokeStyle = INK;
-    ctx.lineWidth = Math.max(2, 4 * (px / 100));
+    ctx.lineWidth = outlineWidth(span, px);
     ctx.lineJoin = 'round';
     ctx.stroke();
   }

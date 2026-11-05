@@ -1,5 +1,5 @@
-const CACHE = 'slop-ny-dde04312f9-drops1';
-const FILES = ["./dist/city-dde04312f9.js","./js/building-geodata.bin.gz","./js/tree-geodata.bin.gz","./assets/ui/pill-red.png?v=dde04312f9","./assets/ui/pill-blue.png?v=dde04312f9","./assets/ui/avatar-roach.png","./assets/ui/avatar-rat.png","./dist/part-5FHELVQX.js","./dist/part-APXUDIYS.js","./dist/part-HYZ3WC7W.js","./dist/part-K7TJC2CO.js","./dist/part-O4WC5KQW.js","./dist/part-OM3ZI3LN.js","./dist/part-PH6WOWCI.js","./dist/part-RMIFO4CX.js","./dist/part-WESDLUJX.js","./dist/part-XKQIZPQY.js"];
+const CACHE = 'slop-ny-d221cf9e49-paint1';
+const FILES = ["./dist/city-d221cf9e49.js","./js/building-geodata.bin.gz","./js/tree-geodata.bin.gz","./assets/ui/pill-red.png?v=d221cf9e49","./assets/ui/pill-blue.png?v=d221cf9e49","./assets/ui/avatar-roach.png","./assets/ui/avatar-rat.png","./dist/part-5FHELVQX.js","./dist/part-APXUDIYS.js","./dist/part-H6XD3IKT.js","./dist/part-HYZ3WC7W.js","./dist/part-K7TJC2CO.js","./dist/part-O4WC5KQW.js","./dist/part-PH6WOWCI.js","./dist/part-RMIFO4CX.js","./dist/part-WESDLUJX.js","./dist/part-XKQIZPQY.js"];
 self.addEventListener('install', (event) => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE);
